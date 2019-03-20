@@ -319,7 +319,8 @@ export interface MarkConfig {
     | 'zoom-in'
     | 'zoom-out'
     | 'grab'
-    | 'grabbing' | SignalRef;
+    | 'grabbing'
+    | SignalRef;
 }
 
 export type AxisConfigKeys =
