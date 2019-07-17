@@ -1,4 +1,4 @@
-# Vega: A Visualization Grammar
+# Vega: A Visualization Grammar <a href="https://vega.github.io/vega/"><img align="right" src="https://github.com/vega/logos/blob/master/assets/VG_Color@64.png?raw=true" height="38"></img></a>
 
 <a href="https://vega.github.io/vega/examples">
 <img src="https://vega.github.io/vega/assets/banner.png" alt="Vega Examples" width="900"></img>
@@ -23,6 +23,6 @@ This repository includes the Vega website and documentation in the `docs` folder
 
 Interested in contributing to Vega? Please see our [contribution and development guidelines](CONTRIBUTING.md), subject to our [code of conduct](CODE_OF_CONDUCT.md).
 
-Looking for support, or interested in sharing examples and tips? Post to the [Vega discussion forum](https://groups.google.com/forum/#!forum/vega-js) or join the [Vega slack organization](https://bit.ly/join-vega-slack)!
+Looking for support, or interested in sharing examples and tips? Post to the [Vega discussion forum](https://groups.google.com/forum/#!forum/vega-js) or join the [Vega slack organization](https://bit.ly/join-vega-slack)! We also have examples available as [Observable notebooks](https://observablehq.com/@vega).
 
-Read about future plans in [our roadmap](https://docs.google.com/document/d/1fscSxSJtfkd1m027r1ONCc7O8RdZp1oGABwca2pgV_E/edit#).
+If you're curious about system performance, see some [in-browser benchmarks](https://observablehq.com/@vega/vega-performance-tests). Read about future plans in [our roadmap](https://docs.google.com/document/d/1fscSxSJtfkd1m027r1ONCc7O8RdZp1oGABwca2pgV_E/edit#).

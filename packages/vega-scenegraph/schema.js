@@ -70,7 +70,7 @@ function css_color_names() {
 var COLOR_NAMES = 'aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen';
 
 var BASE = {
-  "$schema": "http://json-schema.org/draft-04/schema#",
+  "$schema": "http://json-schema.org/draft-06/schema#",
   "title": "Vega scenegraph",
   "description": "Vega scenegraph model.",
   "oneOf": [ { "$ref": "#/refs/mark" } ],
@@ -83,7 +83,8 @@ var BASE = {
     "paint": {
       "oneOf": [
         { "$ref": "#/refs/color" },
-        { "$ref": "#/refs/linear-gradient" }
+        { "$ref": "#/refs/gradientLinear" },
+        { "$ref": "#/refs/gradientRadial" }
       ]
     },
     "color": {
@@ -110,27 +111,48 @@ var BASE = {
         }
       ]
     },
-    "linear-gradient": {
+    "gradientStop": {
       "type": "object",
       "properties": {
+        "offset": { "type": "number" },
+        "color": { "$ref": "#/refs/color" }
+      },
+      "required": ["offset", "color"]
+    },
+    "gradientLinear": {
+      "type": "object",
+      "properties": {
+        "gradient": { "enum": [ "linear" ] },
         "id": { "type": "string" },
-        "type": { "enum": [ "linear" ] },
         "x1": { "type": "number" },
         "y1": { "type": "number" },
         "x2": { "type": "number" },
         "y2": { "type": "number" },
         "stops": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "offset": { "type": "number" },
-              "color": { "$ref": "#/refs/color" }
-            }
-          }
+          "items": { "$ref": "#/refs/gradientStop" }
         }
       },
-      "required": ["id", "type", "x1", "y1", "x2", "y2", "stops"],
+      "required": ["gradient", "stops"],
+      "additionalProperties": false
+    },
+    "gradientRadial": {
+      "type": "object",
+      "properties": {
+        "gradient": { "enum": [ "radial" ] },
+        "id": { "type": "string" },
+        "x1": { "type": "number" },
+        "y1": { "type": "number" },
+        "r1": { "type": "number" },
+        "x2": { "type": "number" },
+        "y2": { "type": "number" },
+        "r2": { "type": "number" },
+        "stops": {
+          "type": "array",
+          "items": { "$ref": "#/refs/gradientStop" }
+        }
+      },
+      "required": ["gradient", "stops"],
       "additionalProperties": false
     }
   }
@@ -166,9 +188,14 @@ var ITEM_BASE = {
     "strokeOpacity": { "type": "number", "default": 1 },
     "strokeWidth": { "type": "number", "default": 1 },
     "strokeCap": { "enum": [ "butt", "cap", "round" ], "default": "butt" },
+    "strokeJoin": { "enum": [ "miter", "round", "bevel" ], "default": "miter" },
+    "strokeMiterLimit": { "type": "number" },
     "strokeDash": { "type": "array", "items": { "type": "number" } },
     "strokeDashOffset": { "type": "number", "default": 0 },
-    "zindex": { "type": "number" }
+    "zindex": { "type": "number" },
+    "cursor": { "type": "string" },
+    "href": { "type": "string", "format": "uri-reference" },
+    "tooltip": {}
   }
 };
 
@@ -231,7 +258,8 @@ var MARKS = {
   },
   "image": {
     "properties": {
-      "url": { "type": "string", "format": "uri" },
+      "url": { "type": "string", "format": "uri-reference" },
+      "aspect": { "type": "boolean", "default": true },
       "align": {
         "enum": [ "left", "center", "right" ],
         "default": "left"
@@ -269,6 +297,7 @@ var MARKS = {
   },
   "symbol": {
     "properties": {
+      "angle": { "type": "number", "default": 0 },
       "size": { "type": "number", "default": 100 },
       "shape": { "type": "string" }
     }

@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "width": 500,
@@ -10,8 +9,8 @@ export const spec: Spec = {
   "signals": [
     { "name": "bandwidth", "value": 0,
       "bind": {"input": "range", "min": 0, "max": 0.1, "step": 0.001} },
-    { "name": "steps", "value": 100,
-      "bind": {"input": "range", "min": 10, "max": 500, "step": 1} },
+    { "name": "steps", "value": 0,
+      "bind": {"input": "range", "min": 0, "max": 500, "step": 1} },
     { "name": "method", "value": "pdf",
       "bind": {"input": "radio", "options": ["pdf", "cdf"]} },
     { "name": "summary",

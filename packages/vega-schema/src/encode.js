@@ -2,7 +2,8 @@ import {
   allOf, anyOf, oneOf, ref,
   array, def, object, pattern, required, type,
   booleanType, nullType, numberType, stringType, signalRef,
-  numberValue
+  numberValue,
+  enums
 } from './util';
 
 export const fontWeightEnum = [
@@ -14,7 +15,8 @@ export const fontWeightEnum = [
 export const alignEnum = ['left', 'right', 'center'];
 export const baselineEnum = ['top', 'middle', 'bottom', 'alphabetic'];
 export const anchorEnum = ['start', 'middle', 'end'];
-export const areaOrientEnum = ['horizontal', 'vertical'];
+export const orientEnum = ['left', 'right', 'top', 'bottom'];
+export const directionEnum = ['horizontal', 'vertical'];
 export const strokeCapEnum = ['butt', 'round', 'square'];
 export const strokeJoinEnum = ['miter', 'round', 'bevel'];
 
@@ -108,9 +110,45 @@ const colorHCL = object({
   _l_: numberValueRef
 }, undefined);
 
+const gradientStops = array(
+  object({
+  _offset_: numberType,
+  _color_: stringType
+  })
+);
+
+const gradientLinear = object({
+  _gradient_: enums(['linear']),
+  id: stringType,
+  x1: numberType,
+  y1: numberType,
+  x2: numberType,
+  y2: numberType,
+  _stops_: ref('gradientStops')
+});
+
+const gradientRadial = object({
+  _gradient_: enums(['radial']),
+  id: stringType,
+  x1: numberType,
+  y1: numberType,
+  r1: numberType,
+  x2: numberType,
+  y2: numberType,
+  r2: numberType,
+  _stops_: ref('gradientStops')
+});
+
 const colorValue = oneOf(
   ref('nullableStringValue'),
-  object({_gradient_: scaleRef}),
+  object({_value_: ref('gradientLinear')}),
+  object({_value_: ref('gradientRadial')}),
+  object({
+    _gradient_: scaleRef,
+    start: array(numberType, {minItems: 2, maxItems: 2}),
+    stop:  array(numberType, {minItems: 2, maxItems: 2}),
+    count: numberType
+  }),
   object({
     _color_: oneOf(
       ref('colorRGB'),
@@ -169,7 +207,7 @@ const encodeEntry = object({
   // Area- and line-mark properties
   interpolate: stringValueRef,
   tension: numberValueRef,
-  orient: ref('orientValue'),
+  orient: ref('directionValue'),
 
   // Image-mark properties
   url: stringValueRef,
@@ -211,14 +249,18 @@ export default {
     anchorValue: valueSchema(anchorEnum),
     alignValue: valueSchema(alignEnum),
     baselineValue: valueSchema(baselineEnum),
-    orientValue: valueSchema(areaOrientEnum),
+    directionValue: valueSchema(directionEnum),
+    orientValue: valueSchema(orientEnum),
     strokeCapValue: valueSchema(strokeCapEnum),
     strokeJoinValue: valueSchema(strokeJoinEnum),
     colorRGB,
     colorHSL,
     colorLAB,
     colorHCL,
-    colorValue
+    colorValue,
+    gradientStops,
+    gradientLinear,
+    gradientRadial
   },
   defs: {
     rule,

@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "padding": 5,
@@ -8,7 +7,7 @@ export const spec: Spec = {
   "config": {
     "title": {
       "frame": "group",
-      "limit": {"signal": "item.extent"}
+      "limit": {"signal": "item.mark.group[item.orient==='left' || item.orient==='right' ? 'height': 'width']"}
     }
   },
 

@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "padding": 5,
@@ -58,7 +57,7 @@ export const spec: Spec = {
     {
       "name": "custom",
       "type": "ordinal",
-      "range": {"scheme": ["royalblue", "lightgray", "goldenrod"]},
+      "range": {"scheme": ["goldenrod", "lightgray", "royalblue"]},
       "domain": {"signal": "domain"}
     }
   ],

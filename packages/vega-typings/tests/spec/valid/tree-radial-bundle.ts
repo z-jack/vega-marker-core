@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "padding": 5,
@@ -205,13 +204,7 @@ export const spec: Spec = {
       "stroke": "color",
       "orient": "bottom-right",
       "title": "Dependencies",
-      "encode": {
-        "symbols": {
-          "enter": {
-            "shape": {"value": "M-0.5,0H1"}
-          }
-        }
-      }
+      "symbolType": "stroke"
     }
   ]
 };

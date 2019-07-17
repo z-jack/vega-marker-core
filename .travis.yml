@@ -1,6 +1,5 @@
 language: node_js
 os: osx
-sudo: false
 node_js:
   - "8"
   - "10"
@@ -9,3 +8,4 @@ before_install:
   - brew install cairo pango
 script:
   - yarn test
+cache: yarn

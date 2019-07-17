@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "width": 300,
@@ -27,6 +26,14 @@ export const spec: Spec = {
     {
       "name": "rtOffset", "value": 5,
       "bind": {"input": "range", "min": 0, "max": 10, "step": 1}
+    },
+    {
+      "name": "rtAnchor", "value": "start",
+      "bind": {"input": "select", "options": ["start", "end"]}
+    },
+    {
+      "name": "ctAnchor", "value": "start",
+      "bind": {"input": "select", "options": ["start", "end"]}
     }
   ],
 
@@ -85,6 +92,10 @@ export const spec: Spec = {
     "offset": {
       "rowTitle": {"signal": "rtOffset"},
       "rowHeader": {"signal": "rhOffset"}
+    },
+    "titleAnchor": {
+      "row": {"signal": "rtAnchor"},
+      "column": {"signal": "ctAnchor"}
     },
     "padding": 0,
     "columns": 1,
@@ -210,7 +221,7 @@ export const spec: Spec = {
           "type": "text",
           "encode": {
             "update": {
-              "align": {"value": "right"},
+              "align": {"signal": "rtAnchor === 'end' ? 'left' : 'right'"},
               "baseline": {"value": "middle"},
               "text": {"value": "Row Title"},
               "fontWeight": {"value": "bold"}
@@ -228,7 +239,7 @@ export const spec: Spec = {
           "encode": {
             "update": {
               "align": {"value": "center"},
-              "baseline": {"value": "bottom"},
+              "baseline": {"signal": "ctAnchor === 'end' ? 'top' : 'bottom'"},
               "text": {"value": "Column Title"},
               "fontWeight": {"value": "bold"}
             }

@@ -1,5 +1,6 @@
-import {isLogarithmic, timeInterval} from 'vega-scale';
+import {isLogarithmic, timeInterval, Time} from 'vega-scale';
 import {error, isNumber, isObject, isString, peek, span} from 'vega-util';
+import {timeFormat} from 'd3-time-format';
 import {
   format as numberFormat,
   formatSpecifier
@@ -110,12 +111,13 @@ function binValues(bins, count) {
  * that automatically trims trailing zeroes will be generated.
  * @param {Scale} scale - The scale for which to generate the label formatter.
  * @param {*} [count] - The approximate number of desired ticks.
- * @param {string} [specifier] - The format specifier. Must be a legal d3 4.0
+ * @param {string} [specifier] - The format specifier. Must be a legal d3
  *   specifier string (see https://github.com/d3/d3-format#formatSpecifier).
  * @return {function(*):string} - The generated label formatter.
  */
-export function tickFormat(scale, count, specifier) {
+export function tickFormat(scale, count, specifier, formatType) {
   var format = scale.tickFormat ? scale.tickFormat(count, specifier)
+    : specifier && formatType === Time ? timeFormat(specifier)
     : specifier ? numberFormat(specifier)
     : String;
 

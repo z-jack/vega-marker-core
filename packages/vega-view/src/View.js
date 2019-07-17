@@ -16,7 +16,7 @@ import timer from './timer';
 import defaultTooltip from './tooltip';
 import trap from './trap';
 
-import {Dataflow} from 'vega-dataflow';
+import {asyncCallback, Dataflow} from 'vega-dataflow';
 import {error, extend, inherits, stringValue} from 'vega-util';
 import {
   CanvasHandler, Scenegraph,
@@ -38,8 +38,9 @@ export default function View(spec, options) {
   options = options || {};
 
   Dataflow.call(view);
-  view.loader(options.loader || view._loader);
-  view.logLevel(options.logLevel || 0);
+  if (options.loader) view.loader(options.loader);
+  if (options.logger) view.logger(options.logger);
+  if (options.logLevel != null) view.logLevel(options.logLevel);
 
   view._el = null;
   view._elBind = null;
@@ -77,7 +78,7 @@ export default function View(spec, options) {
   );
 
   // initialize background color
-  view._background = ctx.background || null;
+  view._background = options.background || ctx.background || null;
 
   // initialize event configuration
   view._eventConfig = initializeEventConfig(ctx.eventConfig);
@@ -94,15 +95,21 @@ export default function View(spec, options) {
 
   // initialize cursor
   cursor(view);
+
+  // initialize hover proessing, if requested
+  if (options.hover) view.hover();
+
+  // initialize DOM container(s) and renderer
+  if (options.container) view.initialize(options.container, options.bind);
 }
 
 var prototype = inherits(View, Dataflow);
 
 // -- DATAFLOW / RENDERING ----
 
-prototype.runAsync = async function(encode) {
-  // evaluate dataflow
-  await Dataflow.prototype.runAsync.call(this, encode);
+prototype.evaluate = async function(encode, prerun, postrun) {
+  // evaluate dataflow and prerun
+  await Dataflow.prototype.evaluate.call(this, encode, prerun);
 
   // render as needed
   if (this._redraw || this._resize) {
@@ -120,19 +127,8 @@ prototype.runAsync = async function(encode) {
     }
   }
 
-  return this;
-};
-
-prototype.runQueue = async function(f) {
-  // await previously queued functions
-  while (this._running) await this._running;
-
-  // invoke function, trapping errors
-  if (f) try { f(); } catch (err) { this.error(err); }
-
-  // run dataflow, manage running promise
-  (this._running = this.runAsync())
-    .then(() => this._running = null);
+  // evaluate postrun
+  if (postrun) asyncCallback(this, postrun);
 
   return this;
 };

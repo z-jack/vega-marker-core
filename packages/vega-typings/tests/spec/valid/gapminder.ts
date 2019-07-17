@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "width": 800,
@@ -91,9 +90,9 @@ export const spec: Spec = {
       "title": "Life Expentancy (Years)",
       "titleColor": "#444",
       "titleAlign": "right",
+      "titleAnchor": "end",
       "titleBaseline": "top",
-      "titleX": 5,
-      "titleY": 0
+      "titleX": 5
     },
     {
       "orient": "bottom",
@@ -101,8 +100,9 @@ export const spec: Spec = {
       "title": "Fertility (# Children)",
       "titleColor": "#444",
       "titleAlign": "right",
-      "titleX": {"signal": "width"},
-      "titleY": {"value": -14}
+      "titleAnchor": "end",
+      "titleBaseline": "bottom",
+      "titleY": -5
     }
   ],
 

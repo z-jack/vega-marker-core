@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "width": 600,
@@ -18,6 +17,10 @@ export const spec: Spec = {
   },
 
   "signals": [
+    {
+      "name": "offset", "value": 10,
+      "bind": {"input": "range", "min": -10, "max": 10, "step": 1}
+    },
     {
       "name": "active",
       "value": null,
@@ -95,7 +98,7 @@ export const spec: Spec = {
       "grid": false,
       "domain": true,
       "title": "Left Title",
-      "offset": 10
+      "offset": {"signal": "offset"}
     },
     {
       "scale": "yscale",
@@ -104,7 +107,7 @@ export const spec: Spec = {
       "grid": true,
       "domain": true,
       "title": "Right Title",
-      "offset": 10
+      "offset": {"signal": "offset"}
     },
     {
       "scale": "xscale",
@@ -112,7 +115,7 @@ export const spec: Spec = {
       "grid": false,
       "domain": true,
       "title": "Top Title",
-      "offset": 10
+      "offset": {"signal": "offset"}
     },
     {
       "scale": "xscale",
@@ -120,7 +123,7 @@ export const spec: Spec = {
       "grid": true,
       "domain": true,
       "title": "Bottom Title",
-      "offset": 10
+      "offset": {"signal": "offset"}
     }
   ],
 

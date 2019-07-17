@@ -1,6 +1,5 @@
 import { Spec } from 'vega';
 
-// https://vega.github.io/editor/#/examples/vega/bar-chart
 export const spec: Spec = {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "width": 400,
@@ -10,16 +9,12 @@ export const spec: Spec = {
 
   "signals": [
     {
-      "name": "binValues",
-      "update": "sequence(bins.start, bins.stop + bins.step, bins.step)"
+      "name": "maxbins", "value": 10,
+      "bind": {"input": "select", "options": [5, 10, 20, 50]}
     },
     {
       "name": "binDomain",
       "update": "[bins.start, bins.stop]"
-    },
-    {
-      "name": "maxbins", "value": 10,
-      "bind": {"input": "select", "options": [5, 10, 20, 50]}
     }
   ],
 
@@ -70,7 +65,7 @@ export const spec: Spec = {
       "range": "width",
       "round": true,
       "domain": {"signal": "binDomain"},
-      "bins": {"signal": "binValues"}
+      "bins": {"signal": "bins"}
     },
     {
       "name": "size",
@@ -78,13 +73,17 @@ export const spec: Spec = {
       "range": [10, 100],
       "round": true,
       "domain": {"signal": "binDomain"},
-      "bins": {"signal": "binValues"}
+      "bins": {"signal": "bins"}
     },
     {
       "name": "color",
       "type": "bin-ordinal",
       "range": {"scheme": "purpleorange"},
-      "domain": {"signal": "binValues"}
+      "bins": {
+        "start": {"signal": "bins.start"},
+        "stop": {"signal": "bins.stop"},
+        "step": {"signal": "bins.step"}
+      }
     }
   ],
 
