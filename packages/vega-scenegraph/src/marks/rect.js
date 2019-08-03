@@ -1,11 +1,22 @@
 import boundStroke from '../bound/boundStroke';
-import {rectangle} from '../path/shapes';
-import {intersectRect} from '../util/intersect';
-import {drawAll} from '../util/canvas/draw';
-import {pickPath} from '../util/canvas/pick';
+import { rectangle } from '../path/shapes';
+import { intersectRect } from '../util/intersect';
+import { drawAll } from '../util/canvas/draw';
+import { pickPath } from '../util/canvas/pick';
+import id from '../util/id'
 
 function attr(emit, item) {
   emit('d', rectangle(null, item));
+  if (item.mark.role.startsWith('mark')) {
+    emit('id', id.getMarkId())
+    emit('data-datum', JSON.stringify({
+      _TYPE: 'rectangle',
+      _MARKID: id.getMarkClass(item.mark),
+      _x: item.x,
+      _y: item.y,
+      ...item.datum
+    }))
+  }
 }
 
 function bound(bounds, item) {
@@ -24,12 +35,12 @@ function draw(context, item) {
 }
 
 export default {
-  type:   'rect',
-  tag:    'path',
+  type: 'rect',
+  tag: 'path',
   nested: false,
-  attr:   attr,
-  bound:  bound,
-  draw:   drawAll(draw),
-  pick:   pickPath(draw),
-  isect:  intersectRect
+  attr: attr,
+  bound: bound,
+  draw: drawAll(draw),
+  pick: pickPath(draw),
+  isect: intersectRect
 };

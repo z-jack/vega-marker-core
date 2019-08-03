@@ -1,14 +1,27 @@
 import boundStroke from '../bound/boundStroke';
 import context from '../bound/boundContext';
-import {intersectPoint} from '../util/intersect';
-import {drawOne} from '../util/canvas/draw';
-import {hitPath} from '../util/canvas/pick';
+import { intersectPoint } from '../util/intersect';
+import { drawOne } from '../util/canvas/draw';
+import { hitPath } from '../util/canvas/pick';
+import id from '../util/id'
 
-export default function(type, shape, tip) {
+export default function (type, shape, tip) {
 
   function attr(emit, item) {
     var items = item.mark.items;
-    if (items.length) emit('d', shape(null, items));
+    if (items.length) {
+      emit('d', shape(null, items));
+      emit('id', id.getMarkId())
+      emit('data-datum', JSON.stringify(items.map(i => {
+        return {
+          _TYPE: 'path',
+          _MARKID: id.getMarkClass(item.mark),
+          _x: item.x,
+          _y: item.y,
+          ...i.datum
+        }
+      })))
+    }
   }
 
   function bound(bounds, mark) {
@@ -30,7 +43,7 @@ export default function(type, shape, tip) {
 
   function pick(context, scene, x, y, gx, gy) {
     var items = scene.items,
-        b = scene.bounds;
+      b = scene.bounds;
 
     if (!items || !items.length || b && !b.contains(gx, gy)) {
       return null;
@@ -42,15 +55,15 @@ export default function(type, shape, tip) {
   }
 
   return {
-    type:   type,
-    tag:    'path',
+    type: type,
+    tag: 'path',
     nested: true,
-    attr:   attr,
-    bound:  bound,
-    draw:   drawOne(draw),
-    pick:   pick,
-    isect:  intersectPoint,
-    tip:    tip
+    attr: attr,
+    bound: bound,
+    draw: drawOne(draw),
+    pick: pick,
+    isect: intersectPoint,
+    tip: tip
   };
 
 }

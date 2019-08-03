@@ -1,13 +1,14 @@
-import {visit} from '../util/visit';
-import {pick} from '../util/canvas/pick';
-import {translate} from '../util/svg/transform';
-import {truthy} from 'vega-util';
+import { visit } from '../util/visit';
+import { pick } from '../util/canvas/pick';
+import { translate } from '../util/svg/transform';
+import { truthy } from 'vega-util';
+import id from '../util/id'
 
 function getImage(item, renderer) {
   var image = item.image;
   if (!image || image.url !== item.url) {
-    image = {loaded: false, width: 0, height: 0};
-    renderer.loadImage(item.url).then(function(image) {
+    image = { loaded: false, width: 0, height: 0 };
+    renderer.loadImage(item.url).then(function (image) {
       item.image = image;
       item.image.url = item.url;
     });
@@ -25,11 +26,11 @@ function imageYOffset(baseline, h) {
 
 function attr(emit, item, renderer) {
   var image = getImage(item, renderer),
-      x = item.x || 0,
-      y = item.y || 0,
-      w = (item.width != null ? item.width : image.width) || 0,
-      h = (item.height != null ? item.height : image.height) || 0,
-      a = item.aspect === false ? 'none' : 'xMidYMid';
+    x = item.x || 0,
+    y = item.y || 0,
+    w = (item.width != null ? item.width : image.width) || 0,
+    h = (item.height != null ? item.height : image.height) || 0,
+    a = item.aspect === false ? 'none' : 'xMidYMid';
 
   x -= imageXOffset(item.align, w);
   y -= imageYOffset(item.baseline, h);
@@ -39,14 +40,24 @@ function attr(emit, item, renderer) {
   emit('width', w);
   emit('height', h);
   emit('preserveAspectRatio', a);
+  if (item.mark.role.startsWith('mark')) {
+    emit('id', id.getMarkId())
+    emit('data-datum', JSON.stringify({
+      _TYPE: 'image',
+      _MARKID: id.getMarkClass(item.mark),
+      _x: item.x,
+      _y: item.y,
+      ...item.datum
+    }))
+  }
 }
 
 function bound(bounds, item) {
   var image = item.image,
-      x = item.x || 0,
-      y = item.y || 0,
-      w = (item.width != null ? item.width : (image && image.width)) || 0,
-      h = (item.height != null ? item.height : (image && image.height)) || 0;
+    x = item.x || 0,
+    y = item.y || 0,
+    w = (item.width != null ? item.width : (image && image.width)) || 0,
+    h = (item.height != null ? item.height : (image && image.height)) || 0;
 
   x -= imageXOffset(item.align, w);
   y -= imageYOffset(item.baseline, h);
@@ -57,15 +68,15 @@ function bound(bounds, item) {
 function draw(context, scene, bounds) {
   var renderer = this;
 
-  visit(scene, function(item) {
+  visit(scene, function (item) {
     if (bounds && !bounds.intersects(item.bounds)) return; // bounds check
 
     var image = getImage(item, renderer),
-        x = item.x || 0,
-        y = item.y || 0,
-        w = (item.width != null ? item.width : image.width) || 0,
-        h = (item.height != null ? item.height : image.height) || 0,
-        opacity, ar0, ar1, t;
+      x = item.x || 0,
+      y = item.y || 0,
+      w = (item.width != null ? item.width : image.width) || 0,
+      h = (item.height != null ? item.height : image.height) || 0,
+      opacity, ar0, ar1, t;
 
     x -= imageXOffset(item.align, w);
     y -= imageYOffset(item.baseline, h);
@@ -94,15 +105,15 @@ function draw(context, scene, bounds) {
 }
 
 export default {
-  type:     'image',
-  tag:      'image',
-  nested:   false,
-  attr:     attr,
-  bound:    bound,
-  draw:     draw,
-  pick:     pick(),
-  isect:    truthy, // bounds check is sufficient
-  get:      getImage,
-  xOffset:  imageXOffset,
-  yOffset:  imageYOffset
+  type: 'image',
+  tag: 'image',
+  nested: false,
+  attr: attr,
+  bound: bound,
+  draw: draw,
+  pick: pick(),
+  isect: truthy, // bounds check is sufficient
+  get: getImage,
+  xOffset: imageXOffset,
+  yOffset: imageYOffset
 };

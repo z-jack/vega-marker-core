@@ -1,6 +1,6 @@
-import {tickCount, tickFormat, tickValues, validTicks} from './ticks';
-import {Transform, ingest} from 'vega-dataflow';
-import {inherits} from 'vega-util';
+import { tickCount, tickFormat, tickValues, validTicks } from './ticks';
+import { Transform, ingest } from 'vega-dataflow';
+import { inherits } from 'vega-util';
 
 /**
  * Generates axis ticks for visualizing a spatial scale.
@@ -24,22 +24,23 @@ export default function AxisTicks(params) {
 
 var prototype = inherits(AxisTicks, Transform);
 
-prototype.transform = function(_, pulse) {
+prototype.transform = function (_, pulse) {
   if (this.value && !_.modified()) {
     return pulse.StopPropagation;
   }
 
   var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
-      ticks = this.value,
-      scale = _.scale,
-      tally = _.count == null ? (_.values ? _.values.length : 10) : _.count,
-      count = tickCount(scale, tally, _.minstep),
-      format = _.format || tickFormat(scale, count, _.formatSpecifier, _.formatType),
-      values = _.values ? validTicks(scale, _.values, count) : tickValues(scale, count);
+    ticks = this.value,
+    scale = _.scale,
+    tally = _.count == null ? (_.values ? _.values.length : 10) : _.count,
+    count = tickCount(scale, tally, _.minstep),
+    format = _.format || tickFormat(scale, count, _.formatSpecifier, _.formatType),
+    values = _.values ? validTicks(scale, _.values, count) : tickValues(scale, count);
 
   if (ticks) out.rem = ticks;
+  console.log(scale)
 
-  ticks = values.map(function(value, i) {
+  ticks = values.map(function (value, i) {
     return ingest({
       index: i / (values.length - 1 || 1),
       value: value,
@@ -52,7 +53,7 @@ prototype.transform = function(_, pulse) {
     // this is used to generate axes with 'binned' domains
     ticks.push(ingest({
       index: -1,
-      extra: {value: ticks[0].value},
+      extra: { value: ticks[0].value },
       label: ''
     }));
   }

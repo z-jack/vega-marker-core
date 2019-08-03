@@ -1,14 +1,15 @@
 import Renderer from './Renderer';
-import {gradientRef, isGradient, patternPrefix} from './Gradient';
+import { gradientRef, isGradient, patternPrefix } from './Gradient';
 import marks from './marks/index';
-import {domChild, domClear, domCreate, cssClass} from './util/dom';
-import {openTag, closeTag} from './util/tags';
-import {fontFamily, fontSize, textValue} from './util/text';
-import {visit} from './util/visit';
+import { domChild, domClear, domCreate, cssClass } from './util/dom';
+import { openTag, closeTag } from './util/tags';
+import { fontFamily, fontSize, textValue } from './util/text';
+import { visit } from './util/visit';
 import clip from './util/svg/clip';
 import metadata from './util/svg/metadata';
-import {styles, styleProperties} from './util/svg/styles';
-import {inherits} from 'vega-util';
+import { styles, styleProperties } from './util/svg/styles';
+import { inherits } from 'vega-util';
+import id from './util/id'
 
 var ns = metadata.xmlns;
 
@@ -24,10 +25,11 @@ export default function SVGRenderer(loader) {
 var prototype = inherits(SVGRenderer, Renderer);
 var base = Renderer.prototype;
 
-prototype.initialize = function(el, width, height, padding) {
+prototype.initialize = function (el, width, height, padding) {
   if (el) {
     this._svg = domChild(el, 0, 'svg', ns);
     this._svg.setAttribute('class', 'marks');
+    this._svg.setAttribute('id', 'visChart')
     domClear(el, 1);
     // set the svg root group
     this._root = domChild(this._svg, 0, 'g', ns);
@@ -46,14 +48,14 @@ prototype.initialize = function(el, width, height, padding) {
   return base.initialize.call(this, el, width, height, padding);
 };
 
-prototype.background = function(bgcolor) {
+prototype.background = function (bgcolor) {
   if (arguments.length && this._svg) {
     this._svg.style.setProperty('background-color', bgcolor);
   }
   return base.background.apply(this, arguments);
 };
 
-prototype.resize = function(width, height, origin, scaleFactor) {
+prototype.resize = function (width, height, origin, scaleFactor) {
   base.resize.call(this, width, height, origin, scaleFactor);
 
   if (this._svg) {
@@ -68,17 +70,18 @@ prototype.resize = function(width, height, origin, scaleFactor) {
   return this;
 };
 
-prototype.canvas = function() {
+prototype.canvas = function () {
   return this._svg;
 };
 
-prototype.svg = function() {
+prototype.svg = function () {
   if (!this._svg) return null;
 
   var attr = {
-    class:   'marks',
-    width:   this._width * this._scale,
-    height:  this._height * this._scale,
+    id: 'visChart',
+    class: 'marks',
+    width: this._width * this._scale,
+    height: this._height * this._scale,
     viewBox: '0 0 ' + this._width + ' ' + this._height
   };
   for (var key in metadata) {
@@ -87,10 +90,10 @@ prototype.svg = function() {
 
   var bg = !this._bgcolor ? ''
     : (openTag('rect', {
-        width:  this._width,
-        height: this._height,
-        style:  'fill: ' + this._bgcolor + ';'
-      }) + closeTag('rect'));
+      width: this._width,
+      height: this._height,
+      style: 'fill: ' + this._bgcolor + ';'
+    }) + closeTag('rect'));
 
   return openTag('svg', attr) + bg + this._svg.innerHTML + closeTag('svg');
 };
@@ -98,8 +101,9 @@ prototype.svg = function() {
 
 // -- Render entry point --
 
-prototype._render = function(scene) {
+prototype._render = function (scene) {
   // perform spot updates and re-render markup
+  id.reset()
   if (this._dirtyCheck()) {
     if (this._dirtyAll) this._resetDefs();
     this.draw(this._root, scene);
@@ -116,11 +120,11 @@ prototype._render = function(scene) {
 
 // -- Manage SVG definitions ('defs') block --
 
-prototype.updateDefs = function() {
+prototype.updateDefs = function () {
   var svg = this._svg,
-      defs = this._defs,
-      el = defs.el,
-      index = 0, id;
+    defs = this._defs,
+    el = defs.el,
+    index = 0, id;
 
   for (id in defs.gradient) {
     if (!el) defs.el = (el = domChild(svg, 0, 'defs', ns));
@@ -170,7 +174,7 @@ function updateGradient(el, grad, index) {
     el.setAttribute('fr', grad.r1);
     el.setAttribute('cx', grad.x2);
     el.setAttribute('cy', grad.y2);
-    el.setAttribute( 'r', grad.r2);
+    el.setAttribute('r', grad.r2);
   } else {
     el = domChild(el, index++, 'linearGradient', ns);
     el.setAttribute('id', grad.id);
@@ -180,7 +184,7 @@ function updateGradient(el, grad, index) {
     el.setAttribute('y2', grad.y2);
   }
 
-  for (i=0, n=grad.stops.length; i<n; ++i) {
+  for (i = 0, n = grad.stops.length; i < n; ++i) {
     stop = domChild(el, i, 'stop', ns);
     stop.setAttribute('offset', grad.stops[i].offset);
     stop.setAttribute('stop-color', grad.stops[i].color);
@@ -210,7 +214,7 @@ function updateClipping(el, clip, index) {
   return index + 1;
 }
 
-prototype._resetDefs = function() {
+prototype._resetDefs = function () {
   var def = this._defs;
   def.gradient = {};
   def.clipping = {};
@@ -219,28 +223,28 @@ prototype._resetDefs = function() {
 
 // -- Manage rendering of items marked as dirty --
 
-prototype.dirty = function(item) {
+prototype.dirty = function (item) {
   if (item.dirty !== this._dirtyID) {
     item.dirty = this._dirtyID;
     this._dirty.push(item);
   }
 };
 
-prototype.isDirty = function(item) {
+prototype.isDirty = function (item) {
   return this._dirtyAll
     || !item._svg
     || item.dirty === this._dirtyID;
 };
 
-prototype._dirtyCheck = function() {
+prototype._dirtyCheck = function () {
   this._dirtyAll = true;
   var items = this._dirty;
   if (!items.length) return true;
 
   var id = ++this._dirtyID,
-      item, mark, type, mdef, i, n, o;
+    item, mark, type, mdef, i, n, o;
 
-  for (i=0, n=items.length; i<n; ++i) {
+  for (i = 0, n = items.length; i < n; ++i) {
     item = items[i];
     mark = item.mark;
 
@@ -253,7 +257,7 @@ prototype._dirtyCheck = function() {
     if (mark.zdirty && mark.dirty !== id) {
       this._dirtyAll = false;
       dirtyParents(item, id);
-      mark.items.forEach(function(i) { i.dirty = id; });
+      mark.items.forEach(function (i) { i.dirty = id; });
     }
     if (mark.zdirty) continue; // handle in standard drawing pass
 
@@ -288,7 +292,7 @@ prototype._dirtyCheck = function() {
 };
 
 function dirtyParents(item, id) {
-  for (; item && item.dirty !== id; item=item.mark.group) {
+  for (; item && item.dirty !== id; item = item.mark.group) {
     item.dirty = id;
     if (item.mark && item.mark.dirty !== id) {
       item.mark.dirty = id;
@@ -300,19 +304,29 @@ function dirtyParents(item, id) {
 // -- Construct & maintain scenegraph to SVG mapping ---
 
 // Draw a mark container.
-prototype.draw = function(el, scene, prev) {
+prototype.draw = function (el, scene, prev) {
   if (!this.isDirty(scene)) return scene._svg;
 
   var renderer = this,
-      svg = this._svg,
-      mdef = marks[scene.marktype],
-      events = scene.interactive === false ? 'none' : null,
-      isGroup = mdef.tag === 'g',
-      sibling = null,
-      i = 0,
-      parent;
+    svg = this._svg,
+    mdef = marks[scene.marktype],
+    events = scene.interactive === false ? 'none' : null,
+    isGroup = mdef.tag === 'g',
+    sibling = null,
+    i = 0,
+    parent;
 
   parent = bind(scene, el, prev, 'g', svg);
+  if (scene.role == 'axis') {
+    parent.setAttribute('data-datum', JSON.stringify({
+      _TYPE: 'axis',
+      type: scene.items[0].datum.orient,
+      position: ''
+    }))
+  }
+  if (scene.role == 'legend') {
+
+  }
   parent.setAttribute('class', cssClass(scene));
   if (!isGroup) {
     parent.style.setProperty('pointer-events', events);
@@ -325,7 +339,7 @@ prototype.draw = function(el, scene, prev) {
 
   function process(item) {
     var dirty = renderer.isDirty(item),
-        node = bind(item, parent, sibling, mdef.tag, svg);
+      node = bind(item, parent, sibling, mdef.tag, svg);
 
     if (dirty) {
       renderer._update(mdef, node, item);
@@ -351,7 +365,7 @@ function recurse(renderer, el, group) {
   el = el.lastChild;
   var prev, idx = 0;
 
-  visit(group, function(item) {
+  visit(group, function (item) {
     prev = renderer.draw(el, item, prev);
     ++idx;
   });
@@ -373,7 +387,7 @@ function bind(item, el, sibling, tag, svg) {
 
     if (item.mark) {
       node.__data__ = item;
-      node.__values__ = {fill: 'default'};
+      node.__values__ = { fill: 'default' };
 
       // if group, create background and foreground elements
       if (tag === 'g') {
@@ -406,11 +420,11 @@ function hasSiblings(item) {
 // -- Set attributes & styles on SVG elements ---
 
 var element = null, // temp var for current SVG element
-    values = null;  // temp var for current values hash
+  values = null;  // temp var for current values hash
 
 // Extra configuration for certain mark types
 var mark_extras = {
-  group: function(mdef, el, item) {
+  group: function (mdef, el, item) {
     values = el.__values__; // use parent's values hash
 
     element = el.childNodes[1];
@@ -425,7 +439,7 @@ var mark_extras = {
       values.events = value;
     }
   },
-  text: function(mdef, el, item) {
+  text: function (mdef, el, item) {
     var value;
 
     value = textValue(item);
@@ -453,7 +467,7 @@ function setStyle(el, name, value) {
   }
 }
 
-prototype._update = function(mdef, el, item) {
+prototype._update = function (mdef, el, item) {
   // set dom element and values cache
   // provides access to emit method
   element = el;
@@ -495,11 +509,11 @@ function emit(name, value, ns) {
   values[name] = value;
 }
 
-prototype.style = function(el, o) {
+prototype.style = function (el, o) {
   if (o == null) return;
   var i, n, prop, name, value;
 
-  for (i=0, n=styleProperties.length; i<n; ++i) {
+  for (i = 0, n = styleProperties.length; i < n; ++i) {
     prop = styleProperties[i];
     value = o[prop];
 
@@ -531,5 +545,5 @@ function href() {
   var loc;
   return typeof window === 'undefined' ? ''
     : (loc = window.location).hash ? loc.href.slice(0, -loc.hash.length)
-    : loc.href;
+      : loc.href;
 }

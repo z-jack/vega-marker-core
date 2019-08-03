@@ -1,14 +1,25 @@
 import boundStroke from '../bound/boundStroke';
-import {intersectRule} from '../util/intersect';
-import {visit} from '../util/visit';
-import {pick} from '../util/canvas/pick';
+import { intersectRule } from '../util/intersect';
+import { visit } from '../util/visit';
+import { pick } from '../util/canvas/pick';
 import stroke from '../util/canvas/stroke';
-import {translateItem} from '../util/svg/transform';
+import { translateItem } from '../util/svg/transform';
+import id from '../util/id'
 
 function attr(emit, item) {
   emit('transform', translateItem(item));
   emit('x2', item.x2 != null ? item.x2 - (item.x || 0) : 0);
   emit('y2', item.y2 != null ? item.y2 - (item.y || 0) : 0);
+  if (item.mark.role.startsWith('mark')) {
+    emit('id', id.getMarkId())
+    emit('data-datum', JSON.stringify({
+      _TYPE: 'rule',
+      _MARKID: id.getMarkClass(item.mark),
+      _x: item.x,
+      _y: item.y,
+      ...item.datum
+    }))
+  }
 }
 
 function bound(bounds, item) {
@@ -38,7 +49,7 @@ function path(context, item, opacity) {
 }
 
 function draw(context, scene, bounds) {
-  visit(scene, function(item) {
+  visit(scene, function (item) {
     if (bounds && !bounds.intersects(item.bounds)) return; // bounds check
     var opacity = item.opacity == null ? 1 : item.opacity;
     if (opacity && path(context, item, opacity)) {
@@ -53,12 +64,12 @@ function hit(context, item, x, y) {
 }
 
 export default {
-  type:   'rule',
-  tag:    'line',
+  type: 'rule',
+  tag: 'line',
   nested: false,
-  attr:   attr,
-  bound:  bound,
-  draw:   draw,
-  pick:   pick(hit),
-  isect:  intersectRule
+  attr: attr,
+  bound: bound,
+  draw: draw,
+  pick: pick(hit),
+  isect: intersectRule
 };

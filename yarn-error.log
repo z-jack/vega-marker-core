@@ -1,0 +1,65 @@
+Arguments: 
+  D:\program Files\Nodejs\node.exe D:\Program Files (x86)\Yarn\bin\yarn.js
+
+PATH: 
+  C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\bin;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\libnvvp;C:\ProgramData\Boxstarter;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\bin;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\libnvvp;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0\extras\CUPTI\libx64;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\iCLS\;C:\Program Files\Intel\Intel(R) Management Engine Components\iCLS\;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\DAL;C:\Program Files\Intel\Intel(R) Management Engine Components\DAL;C:\Program Files (x86)\Intel\Intel(R) Management Engine Components\IPT;C:\Program Files\Intel\Intel(R) Management Engine Components\IPT;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;D:\program\python;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Git\cmd;C:\Program Files (x86)\GnuWin32\bin;C:\Program Files\LLVM\bin;C:\Program Files (x86)\GtkSharp\2.12\bin;D:\program Files\Nodejs\;C:\ProgramData\chocolatey\bin;D:\Program Files (x86)\Yarn\bin\;C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;D:\Program Files (x86)\GnuWin32\bin\openssl.exe;D:\Qt\5.12.0\5.12.0\msvc2017_64\bin;C:\Program Files (x86)\Microsoft SDKs\TypeScript\1.0\;C:\Program Files\Microsoft SQL Server\110\Tools\Binn\;C:\Program Files\CMake\bin;D:\program Files\Nodejs\node_global\bin;D:\program Files\hugo;D:\program Files\aria;C:\Users\Tingting\Downloads\GetGnuWin32\gnuwin32\bin;C:\cygwin64\bin;C:\Users\Tingting\AppData\Local\Programs\Python\Python37\Scripts\;C:\Users\Tingting\AppData\Local\Programs\Python\Python37\;C:\Users\Tingting\AppData\Local\Microsoft\WindowsApps;D:\program Files\Nodejs\node_global;D:\program Files\VSCode\Microsoft VS Code\bin;C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Tools\MSVC\14.15.26726\bin\Hostx64\x64;C:\Users\Tingting\AppData\Roaming\npm;C:\Users\Tingting\AppData\Local\Yarn\bin;C:\Users\Tingting\AppData\Local\Microsoft\WindowsApps;
+
+Yarn version: 
+  1.12.3
+
+Node version: 
+  11.1.0
+
+Platform: 
+  win32 x64
+
+Trace: 
+  Error: EPERM: operation not permitted, unlink 'D:\vega\node_modules\canvas\build\Release\librsvg-2.so.2'
+
+npm manifest: 
+  {
+    "private": true,
+    "license": "BSD-3-Clause",
+    "author": "UW Interactive Data Lab (http://idl.cs.washington.edu)",
+    "repository": "vega/vega",
+    "scripts": {
+      "build": "lerna run build && yarn docsbuild",
+      "clean": "lerna clean --yes && lerna exec -- rimraf build && lerna exec -- rimraf LICENSE && rimraf node_modules yarn.lock",
+      "data": "rsync -r node_modules/vega-datasets/data/* docs/data",
+      "docs": "cd docs && bundle exec jekyll serve",
+      "docsbuild": "cd packages/vega/build && cp vega.js vega.min.js vega-core.js vega-core.min.js vega-schema.json ../../../docs/",
+      "license": "lerna exec -- cp ../../LICENSE .",
+      "release": "yarn license && lerna publish from-package",
+      "serve": "http-server packages/vega/ -c-1 -p8080 -o",
+      "test": "lerna run test",
+      "postinstall": "yarn data"
+    },
+    "devDependencies": {
+      "@types/node": "^12.6.0",
+      "ajv": "^6.10.0",
+      "canvas": "^2.5.0",
+      "dtslint": "^0.9.0",
+      "eslint": "^5.16.0",
+      "http-server": "^0.11.1",
+      "jsdom": "^15.0.0",
+      "lerna": "^3.13.4",
+      "prettier": "^1.17.0",
+      "rimraf": "^2.6.3",
+      "rollup": "^1.16.6",
+      "rollup-plugin-json": "^4.0.0",
+      "rollup-plugin-node-resolve": "^5.0.0",
+      "tape": "^4.10.1",
+      "terser": "^4.0.0",
+      "typescript": "^3.4.5",
+      "vega-datasets": "^1.25.0"
+    },
+    "workspaces": [
+      "packages/*"
+    ]
+  }
+
+yarn manifest: 
+  No manifest
+
+Lockfile: 
+  No lockfile

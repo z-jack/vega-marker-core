@@ -41,5 +41,6 @@ export function domClear(el, index) {
 export function cssClass(mark) {
   return 'mark-' + mark.marktype
     + (mark.role ? ' role-' + mark.role : '')
-    + (mark.name ? ' ' + mark.name : '');
+    + (mark.name ? ' ' + mark.name : '')
+    + (mark.role != 'mark'? ' ' + mark.role : '');
 }

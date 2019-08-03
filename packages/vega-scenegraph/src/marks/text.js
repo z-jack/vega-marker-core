@@ -1,25 +1,26 @@
 import Bounds from '../Bounds';
-import {DegToRad, HalfPi} from '../util/constants';
-import {font, offset, textMetrics, textValue} from '../util/text';
-import {intersectBoxLine} from '../util/intersect';
-import {visit} from '../util/visit';
+import { DegToRad, HalfPi } from '../util/constants';
+import { font, offset, textMetrics, textValue } from '../util/text';
+import { intersectBoxLine } from '../util/intersect';
+import { visit } from '../util/visit';
 import fill from '../util/canvas/fill';
-import {pick} from '../util/canvas/pick';
+import { pick } from '../util/canvas/pick';
 import stroke from '../util/canvas/stroke';
-import {translate, rotate} from '../util/svg/transform';
+import { translate, rotate } from '../util/svg/transform';
+import id from '../util/id'
 
 var textAlign = {
-  'left':   'start',
+  'left': 'start',
   'center': 'middle',
-  'right':  'end'
+  'right': 'end'
 };
 
 var tempBounds = new Bounds();
 
 function anchorPoint(item) {
   var x = item.x || 0,
-      y = item.y || 0,
-      r = item.radius || 0, t;
+    y = item.y || 0,
+    r = item.radius || 0, t;
 
   if (r) {
     t = (item.theta || 0) - HalfPi;
@@ -34,11 +35,11 @@ function anchorPoint(item) {
 
 function attr(emit, item) {
   var dx = item.dx || 0,
-      dy = (item.dy || 0) + offset(item),
-      p = anchorPoint(item),
-      x = p.x1,
-      y = p.y1,
-      a = item.angle || 0, t;
+    dy = (item.dy || 0) + offset(item),
+    p = anchorPoint(item),
+    x = p.x1,
+    y = p.y1,
+    a = item.angle || 0, t;
 
   emit('text-anchor', textAlign[item.align] || 'start');
 
@@ -49,17 +50,27 @@ function attr(emit, item) {
     t = translate(x + dx, y + dy);
   }
   emit('transform', t);
+  if (item.mark.role.startsWith('mark')) {
+    emit('id', id.getMarkId())
+    emit('data-datum', JSON.stringify({
+      _TYPE: 'text',
+      _MARKID: id.getMarkClass(item.mark),
+      _x: item.x,
+      _y: item.y,
+      ...item.datum
+    }))
+  }
 }
 
 function bound(bounds, item, mode) {
   var h = textMetrics.height(item),
-      a = item.align,
-      p = anchorPoint(item),
-      x = p.x1,
-      y = p.y1,
-      dx = item.dx || 0,
-      dy = (item.dy || 0) + offset(item) - Math.round(0.8*h), // use 4/5 offset
-      w;
+    a = item.align,
+    p = anchorPoint(item),
+    x = p.x1,
+    y = p.y1,
+    dx = item.dx || 0,
+    dy = (item.dy || 0) + offset(item) - Math.round(0.8 * h), // use 4/5 offset
+    w;
 
   // horizontal alignment
   w = textMetrics.width(item);
@@ -71,7 +82,7 @@ function bound(bounds, item, mode) {
     // left by default, do nothing
   }
 
-  bounds.set(dx+=x, dy+=y, dx+w, dy+h);
+  bounds.set(dx += x, dy += y, dx + w, dy + h);
   if (item.angle && !mode) {
     bounds.rotate(item.angle * DegToRad, x, y);
   } else if (mode === 2) {
@@ -81,7 +92,7 @@ function bound(bounds, item, mode) {
 }
 
 function draw(context, scene, bounds) {
-  visit(scene, function(item) {
+  visit(scene, function (item) {
     var opacity, p, x, y, str;
     if (bounds && !bounds.intersects(item.bounds)) return; // bounds check
     if (!(str = textValue(item))) return; // get text string
@@ -94,7 +105,7 @@ function draw(context, scene, bounds) {
 
     p = anchorPoint(item);
     x = p.x1,
-    y = p.y1;
+      y = p.y1;
 
     if (item.angle) {
       context.save();
@@ -121,14 +132,14 @@ function hit(context, item, x, y, gx, gy) {
 
   // project point into space of unrotated bounds
   var p = anchorPoint(item),
-      ax = p.x1,
-      ay = p.y1,
-      b = bound(tempBounds, item, 1),
-      a = -item.angle * DegToRad,
-      cos = Math.cos(a),
-      sin = Math.sin(a),
-      px = cos * gx - sin * gy + (ax - cos * ax + sin * ay),
-      py = sin * gx + cos * gy + (ay - sin * ax - cos * ay);
+    ax = p.x1,
+    ay = p.y1,
+    b = bound(tempBounds, item, 1),
+    a = -item.angle * DegToRad,
+    cos = Math.cos(a),
+    sin = Math.sin(a),
+    px = cos * gx - sin * gy + (ax - cos * ax + sin * ay),
+    py = sin * gx + cos * gy + (ay - sin * ax - cos * ay);
 
   return b.contains(px, py);
 }
@@ -136,18 +147,18 @@ function hit(context, item, x, y, gx, gy) {
 function intersectText(item, box) {
   var p = bound(tempBounds, item, 2);
   return intersectBoxLine(box, p[0], p[1], p[2], p[3])
-      || intersectBoxLine(box, p[0], p[1], p[4], p[5])
-      || intersectBoxLine(box, p[4], p[5], p[6], p[7])
-      || intersectBoxLine(box, p[2], p[3], p[6], p[7]);
+    || intersectBoxLine(box, p[0], p[1], p[4], p[5])
+    || intersectBoxLine(box, p[4], p[5], p[6], p[7])
+    || intersectBoxLine(box, p[2], p[3], p[6], p[7]);
 }
 
 export default {
-  type:   'text',
-  tag:    'text',
+  type: 'text',
+  tag: 'text',
   nested: false,
-  attr:   attr,
-  bound:  bound,
-  draw:   draw,
-  pick:   pick(hit),
-  isect:  intersectText
+  attr: attr,
+  bound: bound,
+  draw: draw,
+  pick: pick(hit),
+  isect: intersectText
 };

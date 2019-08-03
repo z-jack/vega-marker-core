@@ -25,6 +25,7 @@ prototype.initialize = function(el, width, height, origin, scaleFactor, options)
   if (el) {
     domClear(el, 0).appendChild(this._canvas);
     this._canvas.setAttribute('class', 'marks');
+    this._canvas.setAttribute('id', 'visChart')
   }
   // this method will invoke resize to size the canvas appropriately
   return base.initialize.call(this, el, width, height, origin, scaleFactor);

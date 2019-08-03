@@ -1,21 +1,22 @@
 import Renderer from './Renderer';
-import {gradientRef, isGradient, patternPrefix} from './Gradient';
+import { gradientRef, isGradient, patternPrefix } from './Gradient';
 import marks from './marks/index';
-import {cssClass} from './util/dom';
-import {openTag, closeTag} from './util/tags';
-import {fontFamily, fontSize, textValue} from './util/text';
-import {visit} from './util/visit';
+import { cssClass } from './util/dom';
+import { openTag, closeTag } from './util/tags';
+import { fontFamily, fontSize, textValue } from './util/text';
+import { visit } from './util/visit';
 import clip from './util/svg/clip';
 import metadata from './util/svg/metadata';
-import {styles, styleProperties} from './util/svg/styles';
-import {inherits} from 'vega-util';
+import { styles, styleProperties } from './util/svg/styles';
+import { inherits } from 'vega-util';
+import id from './util/id'
 
 export default function SVGStringRenderer(loader) {
   Renderer.call(this, loader);
 
   this._text = {
     head: '',
-    bg:   '',
+    bg: '',
     root: '',
     foot: '',
     defs: '',
@@ -31,15 +32,16 @@ export default function SVGStringRenderer(loader) {
 var prototype = inherits(SVGStringRenderer, Renderer);
 var base = Renderer.prototype;
 
-prototype.resize = function(width, height, origin, scaleFactor) {
+prototype.resize = function (width, height, origin, scaleFactor) {
   base.resize.call(this, width, height, origin, scaleFactor);
   var o = this._origin,
-      t = this._text;
+    t = this._text;
 
   var attr = {
-    class:   'marks',
-    width:   this._width * this._scale,
-    height:  this._height * this._scale,
+    id: 'visChart',
+    class: 'marks',
+    width: this._width * this._scale,
+    height: this._height * this._scale,
     viewBox: '0 0 ' + this._width + ' ' + this._height
   };
   for (var key in metadata) {
@@ -53,9 +55,9 @@ prototype.resize = function(width, height, origin, scaleFactor) {
 
   if (bg) {
     t.bg = openTag('rect', {
-      width:  this._width,
+      width: this._width,
       height: this._height,
-      style:  'fill: ' + bg + ';'
+      style: 'fill: ' + bg + ';'
     }) + closeTag('rect');
   } else {
     t.bg = '';
@@ -70,7 +72,7 @@ prototype.resize = function(width, height, origin, scaleFactor) {
   return this;
 };
 
-prototype.background = function() {
+prototype.background = function () {
   var rv = base.background.apply(this, arguments);
   if (arguments.length && this._text.head) {
     this.resize(this._width, this._height, this._origin, this._scale);
@@ -78,21 +80,22 @@ prototype.background = function() {
   return rv;
 };
 
-prototype.svg = function() {
+prototype.svg = function () {
   var t = this._text;
   return t.head + t.bg + t.defs + t.root + t.body + t.foot;
 };
 
-prototype._render = function(scene) {
+prototype._render = function (scene) {
+  id.reset()
   this._text.body = this.mark(scene);
   this._text.defs = this.buildDefs();
   return this;
 };
 
-prototype.buildDefs = function() {
+prototype.buildDefs = function () {
   var all = this._defs,
-      defs = '',
-      i, id, def, tag, stops;
+    defs = '',
+    i, id, def, tag, stops;
 
   for (id in all.gradient) {
     def = all.gradient[id];
@@ -127,7 +130,7 @@ prototype.buildDefs = function() {
         fr: def.r1,
         cx: def.x2,
         cy: def.y2,
-         r: def.r2
+        r: def.r2
       });
     } else {
       defs += openTag(tag = 'linearGradient', {
@@ -139,7 +142,7 @@ prototype.buildDefs = function() {
       });
     }
 
-    for (i=0; i<stops.length; ++i) {
+    for (i = 0; i < stops.length; ++i) {
       defs += openTag('stop', {
         offset: stops[i].offset,
         'stop-color': stops[i].color
@@ -152,7 +155,7 @@ prototype.buildDefs = function() {
   for (id in all.clipping) {
     def = all.clipping[id];
 
-    defs += openTag('clipPath', {id: id});
+    defs += openTag('clipPath', { id: id });
 
     if (def.path) {
       defs += openTag('path', {
@@ -179,22 +182,22 @@ function emit(name, value, ns, prefixed) {
   object[prefixed || name] = value;
 }
 
-prototype.attributes = function(attr, item) {
+prototype.attributes = function (attr, item) {
   object = {};
   attr(emit, item, this);
   return object;
 };
 
-prototype.href = function(item) {
+prototype.href = function (item) {
   var that = this,
-      href = item.href,
-      attr;
+    href = item.href,
+    attr;
 
   if (href) {
     if (attr = that._hrefs && that._hrefs[href]) {
       return attr;
     } else {
-      that.sanitizeURL(href).then(function(attr) {
+      that.sanitizeURL(href).then(function (attr) {
         // rewrite to use xlink namespace
         // note that this will be deprecated in SVG 2.0
         attr['xlink:href'] = attr.href;
@@ -206,13 +209,13 @@ prototype.href = function(item) {
   return null;
 };
 
-prototype.mark = function(scene) {
+prototype.mark = function (scene) {
   var renderer = this,
-      mdef = marks[scene.marktype],
-      tag  = mdef.tag,
-      defs = this._defs,
-      str = '',
-      style;
+    mdef = marks[scene.marktype],
+    tag = mdef.tag,
+    defs = this._defs,
+    str = '',
+    style;
 
   if (tag !== 'g' && scene.interactive === false) {
     style = 'style="pointer-events: none;"';
@@ -223,6 +226,9 @@ prototype.mark = function(scene) {
     'class': cssClass(scene),
     'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null
   }, style);
+  if (scene.role == 'axis' || scene.role == 'legend') {
+    debugger;
+  }
 
   // render contained elements
   function process(item) {
@@ -257,11 +263,11 @@ prototype.mark = function(scene) {
   return str + closeTag('g');
 };
 
-prototype.markGroup = function(scene) {
+prototype.markGroup = function (scene) {
   var renderer = this,
-      str = '';
+    str = '';
 
-  visit(scene, function(item) {
+  visit(scene, function (item) {
     str += renderer.mark(item);
   });
 
@@ -284,7 +290,7 @@ function applyStyles(o, mark, tag, defs) {
     if (o.fontWeight) s += 'font-weight: ' + o.fontWeight + '; ';
   }
 
-  for (i=0, n=styleProperties.length; i<n; ++i) {
+  for (i = 0, n = styleProperties.length; i < n; ++i) {
     prop = styleProperties[i];
     name = styles[prop];
     value = o[prop];
@@ -309,6 +315,6 @@ function applyStyles(o, mark, tag, defs) {
 
 function escape_text(s) {
   return s.replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }

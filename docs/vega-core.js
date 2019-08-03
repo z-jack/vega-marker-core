@@ -3265,8 +3265,6 @@
     return transforms.hasOwnProperty(type) ? transforms[type] : null;
   }
 
-  // Utilities
-
   function multikey(f) {
     return function(x) {
       var n = f.length,
@@ -3583,8 +3581,10 @@
       mu[j] = a / n;
     }
 
+    mu.sort(d3Array.ascending);
+
     return [
-      d3Array.quantile(mu.sort(d3Array.ascending), alpha/2),
+      d3Array.quantile(mu, alpha/2),
       d3Array.quantile(mu, 1-(alpha/2))
     ];
   }
@@ -3592,8 +3592,12 @@
   function quartiles(array, f) {
     var values = Float64Array.from(numbers(array, f));
 
+    // don't depend on return value from typed array sort call
+    // protects against undefined sort results in Safari (vega/vega-lite#4964)
+    values.sort(d3Array.ascending);
+
     return [
-      d3Array.quantile(values.sort(d3Array.ascending), 0.25),
+      d3Array.quantile(values, 0.25),
       d3Array.quantile(values, 0.50),
       d3Array.quantile(values, 0.75)
     ];
@@ -4362,11 +4366,17 @@
         p1 = next[next.length - 1];
 
     while (p1) {
+      // midpoint for potential curve subdivision
       const pm = point((p0[0] + p1[0]) / 2);
 
       if (pm[0] - p0[0] >= stop && angleDelta(p0, pm, p1) > MIN_RADIANS) {
+        // maximum resolution has not yet been met, and
+        // subdivision midpoint sufficiently different from endpoint
+        // save subdivision, push midpoint onto the visitation stack
         next.push(pm);
       } else {
+        // subdivision midpoint sufficiently similar to endpoint
+        // skip subdivision, store endpoint, move to next point on the stack
         p0 = p1;
         prev.push(p1);
         next.pop();
@@ -9238,16 +9248,54 @@
       + (item.angle ? ' ' + rotate(item.angle) : '');
   }
 
-  function markItemPath(type, shape, isect) {
+  let markArray = [];
+  let idCount = 0;
+
+  function getMarkId() {
+      return 'mark' + idCount++
+  }
+
+  function getMarkClass(mark) {
+      if (!mark) return
+      let index = markArray.indexOf(mark);
+      if (index < 0) {
+          index = markArray.length;
+          markArray.push(mark);
+      }
+      return 'element' + index
+  }
+
+  function reset() {
+      markArray = [];
+      idCount = 0;
+  }
+
+  var id$1 = {
+      getMarkId,
+      getMarkClass,
+      reset
+  };
+
+  function markItemPath (type, shape, isect) {
 
     function attr(emit, item) {
       emit('transform', transformItem(item));
       emit('d', shape(null, item));
+      if (item.mark.role.startsWith('mark')) {
+        emit('id', id$1.getMarkId());
+        emit('data-datum', JSON.stringify({
+          _TYPE: 'path',
+          _MARKID: id$1.getMarkClass(item.mark),
+          _x: item.x,
+          _y: item.y,
+          ...item.datum
+        }));
+      }
     }
 
     function bound(bounds, item) {
       var x = item.x || 0,
-          y = item.y || 0;
+        y = item.y || 0;
 
       shape(context(bounds), item);
       boundStroke(bounds, item).translate(x, y);
@@ -9260,8 +9308,8 @@
 
     function draw(context, item) {
       var x = item.x || 0,
-          y = item.y || 0,
-          a = item.angle || 0;
+        y = item.y || 0,
+        a = item.angle || 0;
 
       context.translate(x, y);
       if (a) context.rotate(a *= DegToRad);
@@ -9272,14 +9320,14 @@
     }
 
     return {
-      type:   type,
-      tag:    'path',
+      type: type,
+      tag: 'path',
       nested: false,
-      attr:   attr,
-      bound:  bound,
-      draw:   drawAll(draw),
-      pick:   pickPath(draw),
-      isect:  isect || intersectPath(draw)
+      attr: attr,
+      bound: bound,
+      draw: drawAll(draw),
+      pick: pickPath(draw),
+      isect: isect || intersectPath(draw)
     };
 
   }
@@ -9334,11 +9382,23 @@
     return null;
   }
 
-  function markMultiItemPath(type, shape, tip) {
+  function markMultiItemPath (type, shape, tip) {
 
     function attr(emit, item) {
       var items = item.mark.items;
-      if (items.length) emit('d', shape(null, items));
+      if (items.length) {
+        emit('d', shape(null, items));
+        emit('id', id$1.getMarkId());
+        emit('data-datum', JSON.stringify(items.map(i => {
+          return {
+            _TYPE: 'path',
+            _MARKID: id$1.getMarkClass(item.mark),
+            _x: item.x,
+            _y: item.y,
+            ...i.datum
+          }
+        })));
+      }
     }
 
     function bound(bounds, mark) {
@@ -9360,7 +9420,7 @@
 
     function pick(context, scene, x, y, gx, gy) {
       var items = scene.items,
-          b = scene.bounds;
+        b = scene.bounds;
 
       if (!items || !items.length || b && !b.contains(gx, gy)) {
         return null;
@@ -9372,15 +9432,15 @@
     }
 
     return {
-      type:   type,
-      tag:    'path',
+      type: type,
+      tag: 'path',
       nested: true,
-      attr:   attr,
-      bound:  bound,
-      draw:   drawOne(draw),
-      pick:   pick,
-      isect:  intersectPoint,
-      tip:    tip
+      attr: attr,
+      bound: bound,
+      draw: drawOne(draw),
+      pick: pick,
+      isect: intersectPoint,
+      tip: tip
     };
 
   }
@@ -9413,6 +9473,7 @@
 
   function attr(emit, item) {
     emit('transform', translateItem(item));
+    console.log(item);
   }
 
   function background(emit, item) {
@@ -9565,8 +9626,8 @@
   function getImage(item, renderer) {
     var image = item.image;
     if (!image || image.url !== item.url) {
-      image = {loaded: false, width: 0, height: 0};
-      renderer.loadImage(item.url).then(function(image) {
+      image = { loaded: false, width: 0, height: 0 };
+      renderer.loadImage(item.url).then(function (image) {
         item.image = image;
         item.image.url = item.url;
       });
@@ -9584,11 +9645,11 @@
 
   function attr$1(emit, item, renderer) {
     var image = getImage(item, renderer),
-        x = item.x || 0,
-        y = item.y || 0,
-        w = (item.width != null ? item.width : image.width) || 0,
-        h = (item.height != null ? item.height : image.height) || 0,
-        a = item.aspect === false ? 'none' : 'xMidYMid';
+      x = item.x || 0,
+      y = item.y || 0,
+      w = (item.width != null ? item.width : image.width) || 0,
+      h = (item.height != null ? item.height : image.height) || 0,
+      a = item.aspect === false ? 'none' : 'xMidYMid';
 
     x -= imageXOffset(item.align, w);
     y -= imageYOffset(item.baseline, h);
@@ -9598,14 +9659,24 @@
     emit('width', w);
     emit('height', h);
     emit('preserveAspectRatio', a);
+    if (item.mark.role.startsWith('mark')) {
+      emit('id', id$1.getMarkId());
+      emit('data-datum', JSON.stringify({
+        _TYPE: 'image',
+        _MARKID: id$1.getMarkClass(item.mark),
+        _x: item.x,
+        _y: item.y,
+        ...item.datum
+      }));
+    }
   }
 
   function bound$1(bounds, item) {
     var image = item.image,
-        x = item.x || 0,
-        y = item.y || 0,
-        w = (item.width != null ? item.width : (image && image.width)) || 0,
-        h = (item.height != null ? item.height : (image && image.height)) || 0;
+      x = item.x || 0,
+      y = item.y || 0,
+      w = (item.width != null ? item.width : (image && image.width)) || 0,
+      h = (item.height != null ? item.height : (image && image.height)) || 0;
 
     x -= imageXOffset(item.align, w);
     y -= imageYOffset(item.baseline, h);
@@ -9616,15 +9687,15 @@
   function draw$1(context, scene, bounds) {
     var renderer = this;
 
-    visit(scene, function(item) {
+    visit(scene, function (item) {
       if (bounds && !bounds.intersects(item.bounds)) return; // bounds check
 
       var image = getImage(item, renderer),
-          x = item.x || 0,
-          y = item.y || 0,
-          w = (item.width != null ? item.width : image.width) || 0,
-          h = (item.height != null ? item.height : image.height) || 0,
-          opacity, ar0, ar1, t;
+        x = item.x || 0,
+        y = item.y || 0,
+        w = (item.width != null ? item.width : image.width) || 0,
+        h = (item.height != null ? item.height : image.height) || 0,
+        opacity, ar0, ar1, t;
 
       x -= imageXOffset(item.align, w);
       y -= imageYOffset(item.baseline, h);
@@ -9653,17 +9724,17 @@
   }
 
   var image = {
-    type:     'image',
-    tag:      'image',
-    nested:   false,
-    attr:     attr$1,
-    bound:    bound$1,
-    draw:     draw$1,
-    pick:     pick(),
-    isect:    truthy, // bounds check is sufficient
-    get:      getImage,
-    xOffset:  imageXOffset,
-    yOffset:  imageYOffset
+    type: 'image',
+    tag: 'image',
+    nested: false,
+    attr: attr$1,
+    bound: bound$1,
+    draw: draw$1,
+    pick: pick(),
+    isect: truthy, // bounds check is sufficient
+    get: getImage,
+    xOffset: imageXOffset,
+    yOffset: imageYOffset
   };
 
   var line$1 = markMultiItemPath('line', line, pickLine);
@@ -9671,6 +9742,16 @@
   function attr$2(emit, item) {
     emit('transform', translateItem(item));
     emit('d', item.path);
+    if (item.mark.role.startsWith('mark')) {
+      emit('id', id$1.getMarkId());
+      emit('data-datum', JSON.stringify({
+        _TYPE: 'path',
+        _MARKID: id$1.getMarkClass(item.mark),
+        _x: item.x,
+        _y: item.y,
+        ...item.datum
+      }));
+    }
   }
 
   function path(context, item) {
@@ -9691,18 +9772,28 @@
   }
 
   var path$1 = {
-    type:   'path',
-    tag:    'path',
+    type: 'path',
+    tag: 'path',
     nested: false,
-    attr:   attr$2,
-    bound:  bound$2,
-    draw:   drawAll(path),
-    pick:   pickPath(path),
-    isect:  intersectPath(path)
+    attr: attr$2,
+    bound: bound$2,
+    draw: drawAll(path),
+    pick: pickPath(path),
+    isect: intersectPath(path)
   };
 
   function attr$3(emit, item) {
     emit('d', rectangle(null, item));
+    if (item.mark.role.startsWith('mark')) {
+      emit('id', id$1.getMarkId());
+      emit('data-datum', JSON.stringify({
+        _TYPE: 'rectangle',
+        _MARKID: id$1.getMarkClass(item.mark),
+        _x: item.x,
+        _y: item.y,
+        ...item.datum
+      }));
+    }
   }
 
   function bound$3(bounds, item) {
@@ -9721,20 +9812,30 @@
   }
 
   var rect = {
-    type:   'rect',
-    tag:    'path',
+    type: 'rect',
+    tag: 'path',
     nested: false,
-    attr:   attr$3,
-    bound:  bound$3,
-    draw:   drawAll(draw$2),
-    pick:   pickPath(draw$2),
-    isect:  intersectRect
+    attr: attr$3,
+    bound: bound$3,
+    draw: drawAll(draw$2),
+    pick: pickPath(draw$2),
+    isect: intersectRect
   };
 
   function attr$4(emit, item) {
     emit('transform', translateItem(item));
     emit('x2', item.x2 != null ? item.x2 - (item.x || 0) : 0);
     emit('y2', item.y2 != null ? item.y2 - (item.y || 0) : 0);
+    if (item.mark.role.startsWith('mark')) {
+      emit('id', id$1.getMarkId());
+      emit('data-datum', JSON.stringify({
+        _TYPE: 'rule',
+        _MARKID: id$1.getMarkClass(item.mark),
+        _x: item.x,
+        _y: item.y,
+        ...item.datum
+      }));
+    }
   }
 
   function bound$4(bounds, item) {
@@ -9764,7 +9865,7 @@
   }
 
   function draw$3(context, scene, bounds) {
-    visit(scene, function(item) {
+    visit(scene, function (item) {
       if (bounds && !bounds.intersects(item.bounds)) return; // bounds check
       var opacity = item.opacity == null ? 1 : item.opacity;
       if (opacity && path$2(context, item, opacity)) {
@@ -9779,14 +9880,14 @@
   }
 
   var rule = {
-    type:   'rule',
-    tag:    'line',
+    type: 'rule',
+    tag: 'line',
     nested: false,
-    attr:   attr$4,
-    bound:  bound$4,
-    draw:   draw$3,
-    pick:   pick(hit),
-    isect:  intersectRule
+    attr: attr$4,
+    bound: bound$4,
+    draw: draw$3,
+    pick: pick(hit),
+    isect: intersectRule
   };
 
   var shape$1 = markItemPath('shape', shape);
@@ -9912,17 +10013,17 @@
   }
 
   var textAlign = {
-    'left':   'start',
+    'left': 'start',
     'center': 'middle',
-    'right':  'end'
+    'right': 'end'
   };
 
   var tempBounds = new Bounds();
 
   function anchorPoint(item) {
     var x = item.x || 0,
-        y = item.y || 0,
-        r = item.radius || 0, t;
+      y = item.y || 0,
+      r = item.radius || 0, t;
 
     if (r) {
       t = (item.theta || 0) - HalfPi;
@@ -9937,11 +10038,11 @@
 
   function attr$5(emit, item) {
     var dx = item.dx || 0,
-        dy = (item.dy || 0) + offset(item),
-        p = anchorPoint(item),
-        x = p.x1,
-        y = p.y1,
-        a = item.angle || 0, t;
+      dy = (item.dy || 0) + offset(item),
+      p = anchorPoint(item),
+      x = p.x1,
+      y = p.y1,
+      a = item.angle || 0, t;
 
     emit('text-anchor', textAlign[item.align] || 'start');
 
@@ -9952,17 +10053,27 @@
       t = translate(x + dx, y + dy);
     }
     emit('transform', t);
+    if (item.mark.role.startsWith('mark')) {
+      emit('id', id$1.getMarkId());
+      emit('data-datum', JSON.stringify({
+        _TYPE: 'text',
+        _MARKID: id$1.getMarkClass(item.mark),
+        _x: item.x,
+        _y: item.y,
+        ...item.datum
+      }));
+    }
   }
 
   function bound$5(bounds, item, mode) {
     var h = textMetrics.height(item),
-        a = item.align,
-        p = anchorPoint(item),
-        x = p.x1,
-        y = p.y1,
-        dx = item.dx || 0,
-        dy = (item.dy || 0) + offset(item) - Math.round(0.8*h), // use 4/5 offset
-        w;
+      a = item.align,
+      p = anchorPoint(item),
+      x = p.x1,
+      y = p.y1,
+      dx = item.dx || 0,
+      dy = (item.dy || 0) + offset(item) - Math.round(0.8 * h), // use 4/5 offset
+      w;
 
     // horizontal alignment
     w = textMetrics.width(item);
@@ -9972,7 +10083,7 @@
       dx -= w;
     }
 
-    bounds.set(dx+=x, dy+=y, dx+w, dy+h);
+    bounds.set(dx += x, dy += y, dx + w, dy + h);
     if (item.angle && !mode) {
       bounds.rotate(item.angle * DegToRad, x, y);
     } else if (mode === 2) {
@@ -9982,7 +10093,7 @@
   }
 
   function draw$4(context, scene, bounds) {
-    visit(scene, function(item) {
+    visit(scene, function (item) {
       var opacity, p, x, y, str;
       if (bounds && !bounds.intersects(item.bounds)) return; // bounds check
       if (!(str = textValue(item))) return; // get text string
@@ -9995,7 +10106,7 @@
 
       p = anchorPoint(item);
       x = p.x1,
-      y = p.y1;
+        y = p.y1;
 
       if (item.angle) {
         context.save();
@@ -10022,14 +10133,14 @@
 
     // project point into space of unrotated bounds
     var p = anchorPoint(item),
-        ax = p.x1,
-        ay = p.y1,
-        b = bound$5(tempBounds, item, 1),
-        a = -item.angle * DegToRad,
-        cos = Math.cos(a),
-        sin = Math.sin(a),
-        px = cos * gx - sin * gy + (ax - cos * ax + sin * ay),
-        py = sin * gx + cos * gy + (ay - sin * ax - cos * ay);
+      ax = p.x1,
+      ay = p.y1,
+      b = bound$5(tempBounds, item, 1),
+      a = -item.angle * DegToRad,
+      cos = Math.cos(a),
+      sin = Math.sin(a),
+      px = cos * gx - sin * gy + (ax - cos * ax + sin * ay),
+      py = sin * gx + cos * gy + (ay - sin * ax - cos * ay);
 
     return b.contains(px, py);
   }
@@ -10037,20 +10148,20 @@
   function intersectText(item, box) {
     var p = bound$5(tempBounds, item, 2);
     return intersectBoxLine(box, p[0], p[1], p[2], p[3])
-        || intersectBoxLine(box, p[0], p[1], p[4], p[5])
-        || intersectBoxLine(box, p[4], p[5], p[6], p[7])
-        || intersectBoxLine(box, p[2], p[3], p[6], p[7]);
+      || intersectBoxLine(box, p[0], p[1], p[4], p[5])
+      || intersectBoxLine(box, p[4], p[5], p[6], p[7])
+      || intersectBoxLine(box, p[2], p[3], p[6], p[7]);
   }
 
   var text = {
-    type:   'text',
-    tag:    'text',
+    type: 'text',
+    tag: 'text',
     nested: false,
-    attr:   attr$5,
-    bound:  bound$5,
-    draw:   draw$4,
-    pick:   pick(hit$1),
-    isect:  intersectText
+    attr: attr$5,
+    bound: bound$5,
+    draw: draw$4,
+    pick: pick(hit$1),
+    isect: intersectText
   };
 
   var trail$1 = markMultiItemPath('trail', trail, pickTrail);
@@ -10241,7 +10352,8 @@
   function cssClass(mark) {
     return 'mark-' + mark.marktype
       + (mark.role ? ' role-' + mark.role : '')
-      + (mark.name ? ' ' + mark.name : '');
+      + (mark.name ? ' ' + mark.name : '')
+      + (mark.role != 'mark'? ' ' + mark.role : '');
   }
 
   function point(event, el) {
@@ -10932,6 +11044,7 @@
     if (el) {
       domClear(el, 0).appendChild(this._canvas);
       this._canvas.setAttribute('class', 'marks');
+      this._canvas.setAttribute('id', 'visChart');
     }
     // this method will invoke resize to size the canvas appropriately
     return base.initialize.call(this, el, width, height, origin, scaleFactor);
@@ -11168,10 +11281,11 @@
   var prototype$L = inherits(SVGRenderer, Renderer);
   var base$1 = Renderer.prototype;
 
-  prototype$L.initialize = function(el, width, height, padding) {
+  prototype$L.initialize = function (el, width, height, padding) {
     if (el) {
       this._svg = domChild(el, 0, 'svg', ns);
       this._svg.setAttribute('class', 'marks');
+      this._svg.setAttribute('id', 'visChart');
       domClear(el, 1);
       // set the svg root group
       this._root = domChild(this._svg, 0, 'g', ns);
@@ -11190,14 +11304,14 @@
     return base$1.initialize.call(this, el, width, height, padding);
   };
 
-  prototype$L.background = function(bgcolor) {
+  prototype$L.background = function (bgcolor) {
     if (arguments.length && this._svg) {
       this._svg.style.setProperty('background-color', bgcolor);
     }
     return base$1.background.apply(this, arguments);
   };
 
-  prototype$L.resize = function(width, height, origin, scaleFactor) {
+  prototype$L.resize = function (width, height, origin, scaleFactor) {
     base$1.resize.call(this, width, height, origin, scaleFactor);
 
     if (this._svg) {
@@ -11212,17 +11326,18 @@
     return this;
   };
 
-  prototype$L.canvas = function() {
+  prototype$L.canvas = function () {
     return this._svg;
   };
 
-  prototype$L.svg = function() {
+  prototype$L.svg = function () {
     if (!this._svg) return null;
 
     var attr = {
-      class:   'marks',
-      width:   this._width * this._scale,
-      height:  this._height * this._scale,
+      id: 'visChart',
+      class: 'marks',
+      width: this._width * this._scale,
+      height: this._height * this._scale,
       viewBox: '0 0 ' + this._width + ' ' + this._height
     };
     for (var key in metadata) {
@@ -11231,10 +11346,10 @@
 
     var bg = !this._bgcolor ? ''
       : (openTag('rect', {
-          width:  this._width,
-          height: this._height,
-          style:  'fill: ' + this._bgcolor + ';'
-        }) + closeTag('rect'));
+        width: this._width,
+        height: this._height,
+        style: 'fill: ' + this._bgcolor + ';'
+      }) + closeTag('rect'));
 
     return openTag('svg', attr) + bg + this._svg.innerHTML + closeTag('svg');
   };
@@ -11242,8 +11357,9 @@
 
   // -- Render entry point --
 
-  prototype$L._render = function(scene) {
+  prototype$L._render = function (scene) {
     // perform spot updates and re-render markup
+    id$1.reset();
     if (this._dirtyCheck()) {
       if (this._dirtyAll) this._resetDefs();
       this.draw(this._root, scene);
@@ -11260,11 +11376,11 @@
 
   // -- Manage SVG definitions ('defs') block --
 
-  prototype$L.updateDefs = function() {
+  prototype$L.updateDefs = function () {
     var svg = this._svg,
-        defs = this._defs,
-        el = defs.el,
-        index = 0, id;
+      defs = this._defs,
+      el = defs.el,
+      index = 0, id;
 
     for (id in defs.gradient) {
       if (!el) defs.el = (el = domChild(svg, 0, 'defs', ns));
@@ -11314,7 +11430,7 @@
       el.setAttribute('fr', grad.r1);
       el.setAttribute('cx', grad.x2);
       el.setAttribute('cy', grad.y2);
-      el.setAttribute( 'r', grad.r2);
+      el.setAttribute('r', grad.r2);
     } else {
       el = domChild(el, index++, 'linearGradient', ns);
       el.setAttribute('id', grad.id);
@@ -11324,7 +11440,7 @@
       el.setAttribute('y2', grad.y2);
     }
 
-    for (i=0, n=grad.stops.length; i<n; ++i) {
+    for (i = 0, n = grad.stops.length; i < n; ++i) {
       stop = domChild(el, i, 'stop', ns);
       stop.setAttribute('offset', grad.stops[i].offset);
       stop.setAttribute('stop-color', grad.stops[i].color);
@@ -11354,7 +11470,7 @@
     return index + 1;
   }
 
-  prototype$L._resetDefs = function() {
+  prototype$L._resetDefs = function () {
     var def = this._defs;
     def.gradient = {};
     def.clipping = {};
@@ -11363,28 +11479,28 @@
 
   // -- Manage rendering of items marked as dirty --
 
-  prototype$L.dirty = function(item) {
+  prototype$L.dirty = function (item) {
     if (item.dirty !== this._dirtyID) {
       item.dirty = this._dirtyID;
       this._dirty.push(item);
     }
   };
 
-  prototype$L.isDirty = function(item) {
+  prototype$L.isDirty = function (item) {
     return this._dirtyAll
       || !item._svg
       || item.dirty === this._dirtyID;
   };
 
-  prototype$L._dirtyCheck = function() {
+  prototype$L._dirtyCheck = function () {
     this._dirtyAll = true;
     var items = this._dirty;
     if (!items.length) return true;
 
     var id = ++this._dirtyID,
-        item, mark, type, mdef, i, n, o;
+      item, mark, type, mdef, i, n, o;
 
-    for (i=0, n=items.length; i<n; ++i) {
+    for (i = 0, n = items.length; i < n; ++i) {
       item = items[i];
       mark = item.mark;
 
@@ -11397,7 +11513,7 @@
       if (mark.zdirty && mark.dirty !== id) {
         this._dirtyAll = false;
         dirtyParents(item, id);
-        mark.items.forEach(function(i) { i.dirty = id; });
+        mark.items.forEach(function (i) { i.dirty = id; });
       }
       if (mark.zdirty) continue; // handle in standard drawing pass
 
@@ -11432,7 +11548,7 @@
   };
 
   function dirtyParents(item, id) {
-    for (; item && item.dirty !== id; item=item.mark.group) {
+    for (; item && item.dirty !== id; item = item.mark.group) {
       item.dirty = id;
       if (item.mark && item.mark.dirty !== id) {
         item.mark.dirty = id;
@@ -11444,19 +11560,27 @@
   // -- Construct & maintain scenegraph to SVG mapping ---
 
   // Draw a mark container.
-  prototype$L.draw = function(el, scene, prev) {
+  prototype$L.draw = function (el, scene, prev) {
     if (!this.isDirty(scene)) return scene._svg;
 
     var renderer = this,
-        svg = this._svg,
-        mdef = Marks[scene.marktype],
-        events = scene.interactive === false ? 'none' : null,
-        isGroup = mdef.tag === 'g',
-        sibling = null,
-        i = 0,
-        parent;
+      svg = this._svg,
+      mdef = Marks[scene.marktype],
+      events = scene.interactive === false ? 'none' : null,
+      isGroup = mdef.tag === 'g',
+      sibling = null,
+      i = 0,
+      parent;
 
     parent = bind(scene, el, prev, 'g', svg);
+    if (scene.role == 'axis') {
+      parent.setAttribute('data-datum', JSON.stringify({
+        _TYPE: 'axis',
+        type: scene.items[0].datum.orient,
+        position: ''
+      }));
+    }
+    if (scene.role == 'legend') ;
     parent.setAttribute('class', cssClass(scene));
     if (!isGroup) {
       parent.style.setProperty('pointer-events', events);
@@ -11469,7 +11593,7 @@
 
     function process(item) {
       var dirty = renderer.isDirty(item),
-          node = bind(item, parent, sibling, mdef.tag, svg);
+        node = bind(item, parent, sibling, mdef.tag, svg);
 
       if (dirty) {
         renderer._update(mdef, node, item);
@@ -11495,7 +11619,7 @@
     el = el.lastChild;
     var prev, idx = 0;
 
-    visit(group, function(item) {
+    visit(group, function (item) {
       prev = renderer.draw(el, item, prev);
       ++idx;
     });
@@ -11517,7 +11641,7 @@
 
       if (item.mark) {
         node.__data__ = item;
-        node.__values__ = {fill: 'default'};
+        node.__values__ = { fill: 'default' };
 
         // if group, create background and foreground elements
         if (tag === 'g') {
@@ -11550,11 +11674,11 @@
   // -- Set attributes & styles on SVG elements ---
 
   var element = null, // temp var for current SVG element
-      values = null;  // temp var for current values hash
+    values = null;  // temp var for current values hash
 
   // Extra configuration for certain mark types
   var mark_extras = {
-    group: function(mdef, el, item) {
+    group: function (mdef, el, item) {
       values = el.__values__; // use parent's values hash
 
       element = el.childNodes[1];
@@ -11569,7 +11693,7 @@
         values.events = value;
       }
     },
-    text: function(mdef, el, item) {
+    text: function (mdef, el, item) {
       var value;
 
       value = textValue(item);
@@ -11597,7 +11721,7 @@
     }
   }
 
-  prototype$L._update = function(mdef, el, item) {
+  prototype$L._update = function (mdef, el, item) {
     // set dom element and values cache
     // provides access to emit method
     element = el;
@@ -11639,11 +11763,11 @@
     values[name] = value;
   }
 
-  prototype$L.style = function(el, o) {
+  prototype$L.style = function (el, o) {
     if (o == null) return;
     var i, n, prop, name, value;
 
-    for (i=0, n=styleProperties.length; i<n; ++i) {
+    for (i = 0, n = styleProperties.length; i < n; ++i) {
       prop = styleProperties[i];
       value = o[prop];
 
@@ -11675,7 +11799,7 @@
     var loc;
     return typeof window === 'undefined' ? ''
       : (loc = window.location).hash ? loc.href.slice(0, -loc.hash.length)
-      : loc.href;
+        : loc.href;
   }
 
   function SVGStringRenderer(loader) {
@@ -11683,7 +11807,7 @@
 
     this._text = {
       head: '',
-      bg:   '',
+      bg: '',
       root: '',
       foot: '',
       defs: '',
@@ -11699,15 +11823,16 @@
   var prototype$M = inherits(SVGStringRenderer, Renderer);
   var base$2 = Renderer.prototype;
 
-  prototype$M.resize = function(width, height, origin, scaleFactor) {
+  prototype$M.resize = function (width, height, origin, scaleFactor) {
     base$2.resize.call(this, width, height, origin, scaleFactor);
     var o = this._origin,
-        t = this._text;
+      t = this._text;
 
     var attr = {
-      class:   'marks',
-      width:   this._width * this._scale,
-      height:  this._height * this._scale,
+      id: 'visChart',
+      class: 'marks',
+      width: this._width * this._scale,
+      height: this._height * this._scale,
       viewBox: '0 0 ' + this._width + ' ' + this._height
     };
     for (var key in metadata) {
@@ -11721,9 +11846,9 @@
 
     if (bg) {
       t.bg = openTag('rect', {
-        width:  this._width,
+        width: this._width,
         height: this._height,
-        style:  'fill: ' + bg + ';'
+        style: 'fill: ' + bg + ';'
       }) + closeTag('rect');
     } else {
       t.bg = '';
@@ -11738,7 +11863,7 @@
     return this;
   };
 
-  prototype$M.background = function() {
+  prototype$M.background = function () {
     var rv = base$2.background.apply(this, arguments);
     if (arguments.length && this._text.head) {
       this.resize(this._width, this._height, this._origin, this._scale);
@@ -11746,21 +11871,22 @@
     return rv;
   };
 
-  prototype$M.svg = function() {
+  prototype$M.svg = function () {
     var t = this._text;
     return t.head + t.bg + t.defs + t.root + t.body + t.foot;
   };
 
-  prototype$M._render = function(scene) {
+  prototype$M._render = function (scene) {
+    id$1.reset();
     this._text.body = this.mark(scene);
     this._text.defs = this.buildDefs();
     return this;
   };
 
-  prototype$M.buildDefs = function() {
+  prototype$M.buildDefs = function () {
     var all = this._defs,
-        defs = '',
-        i, id, def, tag, stops;
+      defs = '',
+      i, id, def, tag, stops;
 
     for (id in all.gradient) {
       def = all.gradient[id];
@@ -11795,7 +11921,7 @@
           fr: def.r1,
           cx: def.x2,
           cy: def.y2,
-           r: def.r2
+          r: def.r2
         });
       } else {
         defs += openTag(tag = 'linearGradient', {
@@ -11807,7 +11933,7 @@
         });
       }
 
-      for (i=0; i<stops.length; ++i) {
+      for (i = 0; i < stops.length; ++i) {
         defs += openTag('stop', {
           offset: stops[i].offset,
           'stop-color': stops[i].color
@@ -11820,7 +11946,7 @@
     for (id in all.clipping) {
       def = all.clipping[id];
 
-      defs += openTag('clipPath', {id: id});
+      defs += openTag('clipPath', { id: id });
 
       if (def.path) {
         defs += openTag('path', {
@@ -11847,22 +11973,22 @@
     object[prefixed || name] = value;
   }
 
-  prototype$M.attributes = function(attr, item) {
+  prototype$M.attributes = function (attr, item) {
     object = {};
     attr(emit$1, item, this);
     return object;
   };
 
-  prototype$M.href = function(item) {
+  prototype$M.href = function (item) {
     var that = this,
-        href = item.href,
-        attr;
+      href = item.href,
+      attr;
 
     if (href) {
       if (attr = that._hrefs && that._hrefs[href]) {
         return attr;
       } else {
-        that.sanitizeURL(href).then(function(attr) {
+        that.sanitizeURL(href).then(function (attr) {
           // rewrite to use xlink namespace
           // note that this will be deprecated in SVG 2.0
           attr['xlink:href'] = attr.href;
@@ -11874,13 +12000,13 @@
     return null;
   };
 
-  prototype$M.mark = function(scene) {
+  prototype$M.mark = function (scene) {
     var renderer = this,
-        mdef = Marks[scene.marktype],
-        tag  = mdef.tag,
-        defs = this._defs,
-        str = '',
-        style;
+      mdef = Marks[scene.marktype],
+      tag = mdef.tag,
+      defs = this._defs,
+      str = '',
+      style;
 
     if (tag !== 'g' && scene.interactive === false) {
       style = 'style="pointer-events: none;"';
@@ -11891,6 +12017,9 @@
       'class': cssClass(scene),
       'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null
     }, style);
+    if (scene.role == 'axis' || scene.role == 'legend') {
+      debugger;
+    }
 
     // render contained elements
     function process(item) {
@@ -11925,11 +12054,11 @@
     return str + closeTag('g');
   };
 
-  prototype$M.markGroup = function(scene) {
+  prototype$M.markGroup = function (scene) {
     var renderer = this,
-        str = '';
+      str = '';
 
-    visit(scene, function(item) {
+    visit(scene, function (item) {
       str += renderer.mark(item);
     });
 
@@ -11952,7 +12081,7 @@
       if (o.fontWeight) s += 'font-weight: ' + o.fontWeight + '; ';
     }
 
-    for (i=0, n=styleProperties.length; i<n; ++i) {
+    for (i = 0, n = styleProperties.length; i < n; ++i) {
       prop = styleProperties[i];
       name = styles[prop];
       value = o[prop];
@@ -11977,8 +12106,8 @@
 
   function escape_text(s) {
     return s.replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   var Canvas = 'canvas';
@@ -12401,7 +12530,7 @@
   }
 
   // reset all items to be fully opaque
-  function reset(source) {
+  function reset$1(source) {
     source.forEach(item => item.opacity = 1);
     return source;
   }
@@ -12423,7 +12552,7 @@
     if (!_.method) {
       // early exit if method is falsy
       if (_.modified('method')) {
-        reset(source);
+        reset$1(source);
         pulse = reflow(pulse, _);
       }
       return pulse;
@@ -12436,7 +12565,7 @@
     // skip labels with no content
     source = source.filter(hasBounds);
 
-    items = reset(source);
+    items = reset$1(source);
     pulse = reflow(pulse, _);
 
     if (items.length >= 3 && hasOverlap(items, sep)) {
@@ -14262,22 +14391,23 @@
 
   var prototype$T = inherits(AxisTicks, Transform);
 
-  prototype$T.transform = function(_, pulse) {
+  prototype$T.transform = function (_, pulse) {
     if (this.value && !_.modified()) {
       return pulse.StopPropagation;
     }
 
     var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
-        ticks = this.value,
-        scale = _.scale,
-        tally = _.count == null ? (_.values ? _.values.length : 10) : _.count,
-        count = tickCount(scale, tally, _.minstep),
-        format = _.format || tickFormat(scale, count, _.formatSpecifier, _.formatType),
-        values = _.values ? validTicks(scale, _.values, count) : tickValues(scale, count);
+      ticks = this.value,
+      scale = _.scale,
+      tally = _.count == null ? (_.values ? _.values.length : 10) : _.count,
+      count = tickCount(scale, tally, _.minstep),
+      format = _.format || tickFormat(scale, count, _.formatSpecifier, _.formatType),
+      values = _.values ? validTicks(scale, _.values, count) : tickValues(scale, count);
 
     if (ticks) out.rem = ticks;
+    console.log(scale);
 
-    ticks = values.map(function(value, i) {
+    ticks = values.map(function (value, i) {
       return ingest({
         index: i / (values.length - 1 || 1),
         value: value,
@@ -14290,7 +14420,7 @@
       // this is used to generate axes with 'binned' domains
       ticks.push(ingest({
         index: -1,
-        extra: {value: ticks[0].value},
+        extra: { value: ticks[0].value },
         label: ''
       }));
     }
@@ -14610,7 +14740,7 @@
         scale = _.scale,
         count = tickCount(scale, _.count == null ? 5 : _.count, _.minstep),
         format = _.format || labelFormat(scale, count, type, _.formatSpecifier, _.formatType),
-        values = _.values || labelValues(scale, count, type),
+        values = _.values || labelValues(scale, count),
         domain, fraction, size, offset;
 
     if (items) out.rem = items;
@@ -19753,6 +19883,7 @@
 
     // First, detect invalid regular expressions.
     try {
+      new RegExp(tmp);
     } catch (e) {
       throwError({}, MessageInvalidRegExp);
     }
