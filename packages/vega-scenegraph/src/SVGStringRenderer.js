@@ -64,7 +64,8 @@ prototype.resize = function (width, height, origin, scaleFactor) {
   }
 
   t.root = openTag('g', {
-    transform: 'translate(' + o + ')'
+    transform: 'translate(' + o + ')',
+    id: 'chartContent'
   });
 
   t.foot = closeTag('g') + closeTag('svg');

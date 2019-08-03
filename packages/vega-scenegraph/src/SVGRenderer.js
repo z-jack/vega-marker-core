@@ -10,6 +10,7 @@ import metadata from './util/svg/metadata';
 import { styles, styleProperties } from './util/svg/styles';
 import { inherits } from 'vega-util';
 import id from './util/id'
+import { Scope } from 'vega-parser'
 
 var ns = metadata.xmlns;
 
@@ -33,6 +34,7 @@ prototype.initialize = function (el, width, height, padding) {
     domClear(el, 1);
     // set the svg root group
     this._root = domChild(this._svg, 0, 'g', ns);
+    this._root.setAttribute('id', 'chartContent')
     domClear(this._svg, 1);
   }
 
@@ -323,9 +325,14 @@ prototype.draw = function (el, scene, prev) {
       type: scene.items[0].datum.orient,
       position: ''
     }))
+    console.log(scene.source)
   }
   if (scene.role == 'legend') {
-
+    parent.setAttribute('data-datum', JSON.stringify({
+      _TYPE: 'legend',
+      color: ''
+    }))
+    console.log(scene.source)
   }
   parent.setAttribute('class', cssClass(scene));
   if (!isGroup) {

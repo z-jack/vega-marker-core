@@ -12,7 +12,6 @@ var StrokeOffset = 0.5;
 
 function attr(emit, item) {
   emit('transform', translateItem(item));
-  console.log(item)
 }
 
 function background(emit, item) {

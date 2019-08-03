@@ -12612,7 +12612,6 @@
 
   function attr(emit, item) {
     emit('transform', translateItem(item));
-    console.log(item);
   }
 
   function background(emit, item) {
@@ -14370,7 +14369,7 @@
       for (key in attr) {
         val = attr[key];
         if (val != null) {
-          s += ' ' + key + '="' + val + '"';
+          s += ' ' + key + '="' + ('' + val).replace(/"/g, '&quot;') + '"';
         }
       }
     }
@@ -14406,2544 +14405,2085 @@
 
   var styleProperties = Object.keys(styles);
 
-  var ns = metadata.xmlns;
-
-  function SVGRenderer(loader) {
-    Renderer.call(this, loader);
-    this._dirtyID = 1;
-    this._dirty = [];
-    this._svg = null;
-    this._root = null;
-    this._defs = null;
+  function parseAutosize(spec, config) {
+    spec = spec || config.autosize;
+    return isObject(spec)
+      ? spec
+      : {type: spec || 'pad'};
   }
 
-  var prototype$L = inherits(SVGRenderer, Renderer);
-  var base$1 = Renderer.prototype;
-
-  prototype$L.initialize = function (el, width, height, padding) {
-    if (el) {
-      this._svg = domChild(el, 0, 'svg', ns);
-      this._svg.setAttribute('class', 'marks');
-      this._svg.setAttribute('id', 'visChart');
-      domClear(el, 1);
-      // set the svg root group
-      this._root = domChild(this._svg, 0, 'g', ns);
-      domClear(this._svg, 1);
-    }
-
-    // create the svg definitions cache
-    this._defs = {
-      gradient: {},
-      clipping: {}
-    };
-
-    // set background color if defined
-    this.background(this._bgcolor);
-
-    return base$1.initialize.call(this, el, width, height, padding);
-  };
-
-  prototype$L.background = function (bgcolor) {
-    if (arguments.length && this._svg) {
-      this._svg.style.setProperty('background-color', bgcolor);
-    }
-    return base$1.background.apply(this, arguments);
-  };
-
-  prototype$L.resize = function (width, height, origin, scaleFactor) {
-    base$1.resize.call(this, width, height, origin, scaleFactor);
-
-    if (this._svg) {
-      this._svg.setAttribute('width', this._width * this._scale);
-      this._svg.setAttribute('height', this._height * this._scale);
-      this._svg.setAttribute('viewBox', '0 0 ' + this._width + ' ' + this._height);
-      this._root.setAttribute('transform', 'translate(' + this._origin + ')');
-    }
-
-    this._dirty = [];
-
-    return this;
-  };
-
-  prototype$L.canvas = function () {
-    return this._svg;
-  };
-
-  prototype$L.svg = function () {
-    if (!this._svg) return null;
-
-    var attr = {
-      id: 'visChart',
-      class: 'marks',
-      width: this._width * this._scale,
-      height: this._height * this._scale,
-      viewBox: '0 0 ' + this._width + ' ' + this._height
-    };
-    for (var key in metadata) {
-      attr[key] = metadata[key];
-    }
-
-    var bg = !this._bgcolor ? ''
-      : (openTag('rect', {
-        width: this._width,
-        height: this._height,
-        style: 'fill: ' + this._bgcolor + ';'
-      }) + closeTag('rect'));
-
-    return openTag('svg', attr) + bg + this._svg.innerHTML + closeTag('svg');
-  };
-
-
-  // -- Render entry point --
-
-  prototype$L._render = function (scene) {
-    // perform spot updates and re-render markup
-    id$1.reset();
-    if (this._dirtyCheck()) {
-      if (this._dirtyAll) this._resetDefs();
-      this.draw(this._root, scene);
-      domClear(this._root, 1);
-    }
-
-    this.updateDefs();
-
-    this._dirty = [];
-    ++this._dirtyID;
-
-    return this;
-  };
-
-  // -- Manage SVG definitions ('defs') block --
-
-  prototype$L.updateDefs = function () {
-    var svg = this._svg,
-      defs = this._defs,
-      el = defs.el,
-      index = 0, id;
-
-    for (id in defs.gradient) {
-      if (!el) defs.el = (el = domChild(svg, 0, 'defs', ns));
-      index = updateGradient(el, defs.gradient[id], index);
-    }
-
-    for (id in defs.clipping) {
-      if (!el) defs.el = (el = domChild(svg, 0, 'defs', ns));
-      index = updateClipping(el, defs.clipping[id], index);
-    }
-
-    // clean-up
-    if (el) {
-      if (index === 0) {
-        svg.removeChild(el);
-        defs.el = null;
-      } else {
-        domClear(el, index);
-      }
-    }
-  };
-
-  function updateGradient(el, grad, index) {
-    var i, n, stop;
-
-    if (grad.gradient === 'radial') {
-      // SVG radial gradients automatically transform to normalized bbox
-      // coordinates, in a way that is cumbersome to replicate in canvas.
-      // So we wrap the radial gradient in a pattern element, allowing us
-      // to mantain a circular gradient that matches what canvas provides.
-      var pt = domChild(el, index++, 'pattern', ns);
-      pt.setAttribute('id', patternPrefix + grad.id);
-      pt.setAttribute('viewBox', '0,0,1,1');
-      pt.setAttribute('width', '100%');
-      pt.setAttribute('height', '100%');
-      pt.setAttribute('preserveAspectRatio', 'xMidYMid slice');
-
-      pt = domChild(pt, 0, 'rect', ns);
-      pt.setAttribute('width', '1');
-      pt.setAttribute('height', '1');
-      pt.setAttribute('fill', 'url(' + href() + '#' + grad.id + ')');
-
-      el = domChild(el, index++, 'radialGradient', ns);
-      el.setAttribute('id', grad.id);
-      el.setAttribute('fx', grad.x1);
-      el.setAttribute('fy', grad.y1);
-      el.setAttribute('fr', grad.r1);
-      el.setAttribute('cx', grad.x2);
-      el.setAttribute('cy', grad.y2);
-      el.setAttribute('r', grad.r2);
-    } else {
-      el = domChild(el, index++, 'linearGradient', ns);
-      el.setAttribute('id', grad.id);
-      el.setAttribute('x1', grad.x1);
-      el.setAttribute('x2', grad.x2);
-      el.setAttribute('y1', grad.y1);
-      el.setAttribute('y2', grad.y2);
-    }
-
-    for (i = 0, n = grad.stops.length; i < n; ++i) {
-      stop = domChild(el, i, 'stop', ns);
-      stop.setAttribute('offset', grad.stops[i].offset);
-      stop.setAttribute('stop-color', grad.stops[i].color);
-    }
-    domClear(el, i);
-
-    return index;
-  }
-
-  function updateClipping(el, clip, index) {
-    var mask;
-
-    el = domChild(el, index, 'clipPath', ns);
-    el.setAttribute('id', clip.id);
-
-    if (clip.path) {
-      mask = domChild(el, 0, 'path', ns);
-      mask.setAttribute('d', clip.path);
-    } else {
-      mask = domChild(el, 0, 'rect', ns);
-      mask.setAttribute('x', 0);
-      mask.setAttribute('y', 0);
-      mask.setAttribute('width', clip.width);
-      mask.setAttribute('height', clip.height);
-    }
-
-    return index + 1;
-  }
-
-  prototype$L._resetDefs = function () {
-    var def = this._defs;
-    def.gradient = {};
-    def.clipping = {};
-  };
-
-
-  // -- Manage rendering of items marked as dirty --
-
-  prototype$L.dirty = function (item) {
-    if (item.dirty !== this._dirtyID) {
-      item.dirty = this._dirtyID;
-      this._dirty.push(item);
-    }
-  };
-
-  prototype$L.isDirty = function (item) {
-    return this._dirtyAll
-      || !item._svg
-      || item.dirty === this._dirtyID;
-  };
-
-  prototype$L._dirtyCheck = function () {
-    this._dirtyAll = true;
-    var items = this._dirty;
-    if (!items.length) return true;
-
-    var id = ++this._dirtyID,
-      item, mark, type, mdef, i, n, o;
-
-    for (i = 0, n = items.length; i < n; ++i) {
-      item = items[i];
-      mark = item.mark;
-
-      if (mark.marktype !== type) {
-        // memoize mark instance lookup
-        type = mark.marktype;
-        mdef = Marks[type];
-      }
-
-      if (mark.zdirty && mark.dirty !== id) {
-        this._dirtyAll = false;
-        dirtyParents(item, id);
-        mark.items.forEach(function (i) { i.dirty = id; });
-      }
-      if (mark.zdirty) continue; // handle in standard drawing pass
-
-      if (item.exit) { // EXIT
-        if (mdef.nested && mark.items.length) {
-          // if nested mark with remaining points, update instead
-          o = mark.items[0];
-          if (o._svg) this._update(mdef, o._svg, o);
-        } else if (item._svg) {
-          // otherwise remove from DOM
-          o = item._svg.parentNode;
-          if (o) o.removeChild(item._svg);
+  function parsePadding(spec, config) {
+    spec = spec || config.padding;
+    return isObject(spec)
+      ? {
+          top:    number$1(spec.top),
+          bottom: number$1(spec.bottom),
+          left:   number$1(spec.left),
+          right:  number$1(spec.right)
         }
-        item._svg = null;
-        continue;
-      }
+      : paddingObject(number$1(spec));
+  }
 
-      item = (mdef.nested ? mark.items[0] : item);
-      if (item._update === id) continue; // already visited
+  function number$1(_) {
+    return +_ || 0;
+  }
 
-      if (!item._svg || !item._svg.ownerSVGElement) {
-        // ENTER
-        this._dirtyAll = false;
-        dirtyParents(item, id);
+  function paddingObject(_) {
+    return {top: _, bottom: _, left: _, right: _};
+  }
+
+  var OUTER = 'outer',
+      OUTER_INVALID = ['value', 'update', 'init', 'react', 'bind'];
+
+  function outerError(prefix, name) {
+    error(prefix + ' for "outer" push: ' + $(name));
+  }
+
+  function parseSignal(signal, scope) {
+    var name = signal.name;
+
+    if (signal.push === OUTER) {
+      // signal must already be defined, raise error if not
+      if (!scope.signals[name]) outerError('No prior signal definition', name);
+      // signal push must not use properties reserved for standard definition
+      OUTER_INVALID.forEach(function(prop) {
+        if (signal[prop] !== undefined) outerError('Invalid property ', prop);
+      });
+    } else {
+      // define a new signal in the current scope
+      var op = scope.addSignal(name, signal.value);
+      if (signal.react === false) op.react = false;
+      if (signal.bind) scope.addBinding(name, signal.bind);
+    }
+  }
+
+  var RawCode = 'RawCode';
+  var Literal = 'Literal';
+  var Property = 'Property';
+  var Identifier = 'Identifier';
+
+  var ArrayExpression = 'ArrayExpression';
+  var BinaryExpression = 'BinaryExpression';
+  var CallExpression = 'CallExpression';
+  var ConditionalExpression = 'ConditionalExpression';
+  var LogicalExpression = 'LogicalExpression';
+  var MemberExpression = 'MemberExpression';
+  var ObjectExpression = 'ObjectExpression';
+  var UnaryExpression = 'UnaryExpression';
+
+  function ASTNode(type) {
+    this.type = type;
+  }
+
+  ASTNode.prototype.visit = function(visitor) {
+    var node = this, c, i, n;
+
+    if (visitor(node)) return 1;
+
+    for (c=children(node), i=0, n=c.length; i<n; ++i) {
+      if (c[i].visit(visitor)) return 1;
+    }
+  };
+
+  function children(node) {
+    switch (node.type) {
+      case ArrayExpression:
+        return node.elements;
+      case BinaryExpression:
+      case LogicalExpression:
+        return [node.left, node.right];
+      case CallExpression:
+        var args = node.arguments.slice();
+        args.unshift(node.callee);
+        return args;
+      case ConditionalExpression:
+        return [node.test, node.consequent, node.alternate];
+      case MemberExpression:
+        return [node.object, node.property];
+      case ObjectExpression:
+        return node.properties;
+      case Property:
+        return [node.key, node.value];
+      case UnaryExpression:
+        return [node.argument];
+      case Identifier:
+      case Literal:
+      case RawCode:
+      default:
+        return [];
+    }
+  }
+
+  /*
+    The following expression parser is based on Esprima (http://esprima.org/).
+    Original header comment and license for Esprima is included here:
+
+    Copyright (C) 2013 Ariya Hidayat <ariya.hidayat@gmail.com>
+    Copyright (C) 2013 Thaddee Tyl <thaddee.tyl@gmail.com>
+    Copyright (C) 2013 Mathias Bynens <mathias@qiwi.be>
+    Copyright (C) 2012 Ariya Hidayat <ariya.hidayat@gmail.com>
+    Copyright (C) 2012 Mathias Bynens <mathias@qiwi.be>
+    Copyright (C) 2012 Joost-Wim Boekesteijn <joost-wim@boekesteijn.nl>
+    Copyright (C) 2012 Kris Kowal <kris.kowal@cixar.com>
+    Copyright (C) 2012 Yusuke Suzuki <utatane.tea@gmail.com>
+    Copyright (C) 2012 Arpad Borsos <arpad.borsos@googlemail.com>
+    Copyright (C) 2011 Ariya Hidayat <ariya.hidayat@gmail.com>
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+      * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+    DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+    (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+    LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+    ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+    THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+
+  var TokenName,
+      source$1,
+      index,
+      length,
+      lookahead;
+
+  var TokenBooleanLiteral = 1,
+      TokenEOF = 2,
+      TokenIdentifier = 3,
+      TokenKeyword = 4,
+      TokenNullLiteral = 5,
+      TokenNumericLiteral = 6,
+      TokenPunctuator = 7,
+      TokenStringLiteral = 8,
+      TokenRegularExpression = 9;
+
+  TokenName = {};
+  TokenName[TokenBooleanLiteral] = 'Boolean';
+  TokenName[TokenEOF] = '<end>';
+  TokenName[TokenIdentifier] = 'Identifier';
+  TokenName[TokenKeyword] = 'Keyword';
+  TokenName[TokenNullLiteral] = 'Null';
+  TokenName[TokenNumericLiteral] = 'Numeric';
+  TokenName[TokenPunctuator] = 'Punctuator';
+  TokenName[TokenStringLiteral] = 'String';
+  TokenName[TokenRegularExpression] = 'RegularExpression';
+
+  var SyntaxArrayExpression = 'ArrayExpression',
+      SyntaxBinaryExpression = 'BinaryExpression',
+      SyntaxCallExpression = 'CallExpression',
+      SyntaxConditionalExpression = 'ConditionalExpression',
+      SyntaxIdentifier = 'Identifier',
+      SyntaxLiteral = 'Literal',
+      SyntaxLogicalExpression = 'LogicalExpression',
+      SyntaxMemberExpression = 'MemberExpression',
+      SyntaxObjectExpression = 'ObjectExpression',
+      SyntaxProperty = 'Property',
+      SyntaxUnaryExpression = 'UnaryExpression';
+
+  // Error messages should be identical to V8.
+  var MessageUnexpectedToken = 'Unexpected token %0',
+      MessageUnexpectedNumber = 'Unexpected number',
+      MessageUnexpectedString = 'Unexpected string',
+      MessageUnexpectedIdentifier = 'Unexpected identifier',
+      MessageUnexpectedReserved = 'Unexpected reserved word',
+      MessageUnexpectedEOS = 'Unexpected end of input',
+      MessageInvalidRegExp = 'Invalid regular expression',
+      MessageUnterminatedRegExp = 'Invalid regular expression: missing /',
+      MessageStrictOctalLiteral = 'Octal literals are not allowed in strict mode.',
+      MessageStrictDuplicateProperty = 'Duplicate data property in object literal not allowed in strict mode';
+
+  var ILLEGAL = 'ILLEGAL',
+      DISABLED = 'Disabled.';
+
+  // See also tools/generate-unicode-regex.py.
+    var RegexNonAsciiIdentifierStart = new RegExp("[\\xAA\\xB5\\xBA\\xC0-\\xD6\\xD8-\\xF6\\xF8-\\u02C1\\u02C6-\\u02D1\\u02E0-\\u02E4\\u02EC\\u02EE\\u0370-\\u0374\\u0376\\u0377\\u037A-\\u037D\\u037F\\u0386\\u0388-\\u038A\\u038C\\u038E-\\u03A1\\u03A3-\\u03F5\\u03F7-\\u0481\\u048A-\\u052F\\u0531-\\u0556\\u0559\\u0561-\\u0587\\u05D0-\\u05EA\\u05F0-\\u05F2\\u0620-\\u064A\\u066E\\u066F\\u0671-\\u06D3\\u06D5\\u06E5\\u06E6\\u06EE\\u06EF\\u06FA-\\u06FC\\u06FF\\u0710\\u0712-\\u072F\\u074D-\\u07A5\\u07B1\\u07CA-\\u07EA\\u07F4\\u07F5\\u07FA\\u0800-\\u0815\\u081A\\u0824\\u0828\\u0840-\\u0858\\u08A0-\\u08B2\\u0904-\\u0939\\u093D\\u0950\\u0958-\\u0961\\u0971-\\u0980\\u0985-\\u098C\\u098F\\u0990\\u0993-\\u09A8\\u09AA-\\u09B0\\u09B2\\u09B6-\\u09B9\\u09BD\\u09CE\\u09DC\\u09DD\\u09DF-\\u09E1\\u09F0\\u09F1\\u0A05-\\u0A0A\\u0A0F\\u0A10\\u0A13-\\u0A28\\u0A2A-\\u0A30\\u0A32\\u0A33\\u0A35\\u0A36\\u0A38\\u0A39\\u0A59-\\u0A5C\\u0A5E\\u0A72-\\u0A74\\u0A85-\\u0A8D\\u0A8F-\\u0A91\\u0A93-\\u0AA8\\u0AAA-\\u0AB0\\u0AB2\\u0AB3\\u0AB5-\\u0AB9\\u0ABD\\u0AD0\\u0AE0\\u0AE1\\u0B05-\\u0B0C\\u0B0F\\u0B10\\u0B13-\\u0B28\\u0B2A-\\u0B30\\u0B32\\u0B33\\u0B35-\\u0B39\\u0B3D\\u0B5C\\u0B5D\\u0B5F-\\u0B61\\u0B71\\u0B83\\u0B85-\\u0B8A\\u0B8E-\\u0B90\\u0B92-\\u0B95\\u0B99\\u0B9A\\u0B9C\\u0B9E\\u0B9F\\u0BA3\\u0BA4\\u0BA8-\\u0BAA\\u0BAE-\\u0BB9\\u0BD0\\u0C05-\\u0C0C\\u0C0E-\\u0C10\\u0C12-\\u0C28\\u0C2A-\\u0C39\\u0C3D\\u0C58\\u0C59\\u0C60\\u0C61\\u0C85-\\u0C8C\\u0C8E-\\u0C90\\u0C92-\\u0CA8\\u0CAA-\\u0CB3\\u0CB5-\\u0CB9\\u0CBD\\u0CDE\\u0CE0\\u0CE1\\u0CF1\\u0CF2\\u0D05-\\u0D0C\\u0D0E-\\u0D10\\u0D12-\\u0D3A\\u0D3D\\u0D4E\\u0D60\\u0D61\\u0D7A-\\u0D7F\\u0D85-\\u0D96\\u0D9A-\\u0DB1\\u0DB3-\\u0DBB\\u0DBD\\u0DC0-\\u0DC6\\u0E01-\\u0E30\\u0E32\\u0E33\\u0E40-\\u0E46\\u0E81\\u0E82\\u0E84\\u0E87\\u0E88\\u0E8A\\u0E8D\\u0E94-\\u0E97\\u0E99-\\u0E9F\\u0EA1-\\u0EA3\\u0EA5\\u0EA7\\u0EAA\\u0EAB\\u0EAD-\\u0EB0\\u0EB2\\u0EB3\\u0EBD\\u0EC0-\\u0EC4\\u0EC6\\u0EDC-\\u0EDF\\u0F00\\u0F40-\\u0F47\\u0F49-\\u0F6C\\u0F88-\\u0F8C\\u1000-\\u102A\\u103F\\u1050-\\u1055\\u105A-\\u105D\\u1061\\u1065\\u1066\\u106E-\\u1070\\u1075-\\u1081\\u108E\\u10A0-\\u10C5\\u10C7\\u10CD\\u10D0-\\u10FA\\u10FC-\\u1248\\u124A-\\u124D\\u1250-\\u1256\\u1258\\u125A-\\u125D\\u1260-\\u1288\\u128A-\\u128D\\u1290-\\u12B0\\u12B2-\\u12B5\\u12B8-\\u12BE\\u12C0\\u12C2-\\u12C5\\u12C8-\\u12D6\\u12D8-\\u1310\\u1312-\\u1315\\u1318-\\u135A\\u1380-\\u138F\\u13A0-\\u13F4\\u1401-\\u166C\\u166F-\\u167F\\u1681-\\u169A\\u16A0-\\u16EA\\u16EE-\\u16F8\\u1700-\\u170C\\u170E-\\u1711\\u1720-\\u1731\\u1740-\\u1751\\u1760-\\u176C\\u176E-\\u1770\\u1780-\\u17B3\\u17D7\\u17DC\\u1820-\\u1877\\u1880-\\u18A8\\u18AA\\u18B0-\\u18F5\\u1900-\\u191E\\u1950-\\u196D\\u1970-\\u1974\\u1980-\\u19AB\\u19C1-\\u19C7\\u1A00-\\u1A16\\u1A20-\\u1A54\\u1AA7\\u1B05-\\u1B33\\u1B45-\\u1B4B\\u1B83-\\u1BA0\\u1BAE\\u1BAF\\u1BBA-\\u1BE5\\u1C00-\\u1C23\\u1C4D-\\u1C4F\\u1C5A-\\u1C7D\\u1CE9-\\u1CEC\\u1CEE-\\u1CF1\\u1CF5\\u1CF6\\u1D00-\\u1DBF\\u1E00-\\u1F15\\u1F18-\\u1F1D\\u1F20-\\u1F45\\u1F48-\\u1F4D\\u1F50-\\u1F57\\u1F59\\u1F5B\\u1F5D\\u1F5F-\\u1F7D\\u1F80-\\u1FB4\\u1FB6-\\u1FBC\\u1FBE\\u1FC2-\\u1FC4\\u1FC6-\\u1FCC\\u1FD0-\\u1FD3\\u1FD6-\\u1FDB\\u1FE0-\\u1FEC\\u1FF2-\\u1FF4\\u1FF6-\\u1FFC\\u2071\\u207F\\u2090-\\u209C\\u2102\\u2107\\u210A-\\u2113\\u2115\\u2119-\\u211D\\u2124\\u2126\\u2128\\u212A-\\u212D\\u212F-\\u2139\\u213C-\\u213F\\u2145-\\u2149\\u214E\\u2160-\\u2188\\u2C00-\\u2C2E\\u2C30-\\u2C5E\\u2C60-\\u2CE4\\u2CEB-\\u2CEE\\u2CF2\\u2CF3\\u2D00-\\u2D25\\u2D27\\u2D2D\\u2D30-\\u2D67\\u2D6F\\u2D80-\\u2D96\\u2DA0-\\u2DA6\\u2DA8-\\u2DAE\\u2DB0-\\u2DB6\\u2DB8-\\u2DBE\\u2DC0-\\u2DC6\\u2DC8-\\u2DCE\\u2DD0-\\u2DD6\\u2DD8-\\u2DDE\\u2E2F\\u3005-\\u3007\\u3021-\\u3029\\u3031-\\u3035\\u3038-\\u303C\\u3041-\\u3096\\u309D-\\u309F\\u30A1-\\u30FA\\u30FC-\\u30FF\\u3105-\\u312D\\u3131-\\u318E\\u31A0-\\u31BA\\u31F0-\\u31FF\\u3400-\\u4DB5\\u4E00-\\u9FCC\\uA000-\\uA48C\\uA4D0-\\uA4FD\\uA500-\\uA60C\\uA610-\\uA61F\\uA62A\\uA62B\\uA640-\\uA66E\\uA67F-\\uA69D\\uA6A0-\\uA6EF\\uA717-\\uA71F\\uA722-\\uA788\\uA78B-\\uA78E\\uA790-\\uA7AD\\uA7B0\\uA7B1\\uA7F7-\\uA801\\uA803-\\uA805\\uA807-\\uA80A\\uA80C-\\uA822\\uA840-\\uA873\\uA882-\\uA8B3\\uA8F2-\\uA8F7\\uA8FB\\uA90A-\\uA925\\uA930-\\uA946\\uA960-\\uA97C\\uA984-\\uA9B2\\uA9CF\\uA9E0-\\uA9E4\\uA9E6-\\uA9EF\\uA9FA-\\uA9FE\\uAA00-\\uAA28\\uAA40-\\uAA42\\uAA44-\\uAA4B\\uAA60-\\uAA76\\uAA7A\\uAA7E-\\uAAAF\\uAAB1\\uAAB5\\uAAB6\\uAAB9-\\uAABD\\uAAC0\\uAAC2\\uAADB-\\uAADD\\uAAE0-\\uAAEA\\uAAF2-\\uAAF4\\uAB01-\\uAB06\\uAB09-\\uAB0E\\uAB11-\\uAB16\\uAB20-\\uAB26\\uAB28-\\uAB2E\\uAB30-\\uAB5A\\uAB5C-\\uAB5F\\uAB64\\uAB65\\uABC0-\\uABE2\\uAC00-\\uD7A3\\uD7B0-\\uD7C6\\uD7CB-\\uD7FB\\uF900-\\uFA6D\\uFA70-\\uFAD9\\uFB00-\\uFB06\\uFB13-\\uFB17\\uFB1D\\uFB1F-\\uFB28\\uFB2A-\\uFB36\\uFB38-\\uFB3C\\uFB3E\\uFB40\\uFB41\\uFB43\\uFB44\\uFB46-\\uFBB1\\uFBD3-\\uFD3D\\uFD50-\\uFD8F\\uFD92-\\uFDC7\\uFDF0-\\uFDFB\\uFE70-\\uFE74\\uFE76-\\uFEFC\\uFF21-\\uFF3A\\uFF41-\\uFF5A\\uFF66-\\uFFBE\\uFFC2-\\uFFC7\\uFFCA-\\uFFCF\\uFFD2-\\uFFD7\\uFFDA-\\uFFDC]"),
+        RegexNonAsciiIdentifierPart = new RegExp("[\\xAA\\xB5\\xBA\\xC0-\\xD6\\xD8-\\xF6\\xF8-\\u02C1\\u02C6-\\u02D1\\u02E0-\\u02E4\\u02EC\\u02EE\\u0300-\\u0374\\u0376\\u0377\\u037A-\\u037D\\u037F\\u0386\\u0388-\\u038A\\u038C\\u038E-\\u03A1\\u03A3-\\u03F5\\u03F7-\\u0481\\u0483-\\u0487\\u048A-\\u052F\\u0531-\\u0556\\u0559\\u0561-\\u0587\\u0591-\\u05BD\\u05BF\\u05C1\\u05C2\\u05C4\\u05C5\\u05C7\\u05D0-\\u05EA\\u05F0-\\u05F2\\u0610-\\u061A\\u0620-\\u0669\\u066E-\\u06D3\\u06D5-\\u06DC\\u06DF-\\u06E8\\u06EA-\\u06FC\\u06FF\\u0710-\\u074A\\u074D-\\u07B1\\u07C0-\\u07F5\\u07FA\\u0800-\\u082D\\u0840-\\u085B\\u08A0-\\u08B2\\u08E4-\\u0963\\u0966-\\u096F\\u0971-\\u0983\\u0985-\\u098C\\u098F\\u0990\\u0993-\\u09A8\\u09AA-\\u09B0\\u09B2\\u09B6-\\u09B9\\u09BC-\\u09C4\\u09C7\\u09C8\\u09CB-\\u09CE\\u09D7\\u09DC\\u09DD\\u09DF-\\u09E3\\u09E6-\\u09F1\\u0A01-\\u0A03\\u0A05-\\u0A0A\\u0A0F\\u0A10\\u0A13-\\u0A28\\u0A2A-\\u0A30\\u0A32\\u0A33\\u0A35\\u0A36\\u0A38\\u0A39\\u0A3C\\u0A3E-\\u0A42\\u0A47\\u0A48\\u0A4B-\\u0A4D\\u0A51\\u0A59-\\u0A5C\\u0A5E\\u0A66-\\u0A75\\u0A81-\\u0A83\\u0A85-\\u0A8D\\u0A8F-\\u0A91\\u0A93-\\u0AA8\\u0AAA-\\u0AB0\\u0AB2\\u0AB3\\u0AB5-\\u0AB9\\u0ABC-\\u0AC5\\u0AC7-\\u0AC9\\u0ACB-\\u0ACD\\u0AD0\\u0AE0-\\u0AE3\\u0AE6-\\u0AEF\\u0B01-\\u0B03\\u0B05-\\u0B0C\\u0B0F\\u0B10\\u0B13-\\u0B28\\u0B2A-\\u0B30\\u0B32\\u0B33\\u0B35-\\u0B39\\u0B3C-\\u0B44\\u0B47\\u0B48\\u0B4B-\\u0B4D\\u0B56\\u0B57\\u0B5C\\u0B5D\\u0B5F-\\u0B63\\u0B66-\\u0B6F\\u0B71\\u0B82\\u0B83\\u0B85-\\u0B8A\\u0B8E-\\u0B90\\u0B92-\\u0B95\\u0B99\\u0B9A\\u0B9C\\u0B9E\\u0B9F\\u0BA3\\u0BA4\\u0BA8-\\u0BAA\\u0BAE-\\u0BB9\\u0BBE-\\u0BC2\\u0BC6-\\u0BC8\\u0BCA-\\u0BCD\\u0BD0\\u0BD7\\u0BE6-\\u0BEF\\u0C00-\\u0C03\\u0C05-\\u0C0C\\u0C0E-\\u0C10\\u0C12-\\u0C28\\u0C2A-\\u0C39\\u0C3D-\\u0C44\\u0C46-\\u0C48\\u0C4A-\\u0C4D\\u0C55\\u0C56\\u0C58\\u0C59\\u0C60-\\u0C63\\u0C66-\\u0C6F\\u0C81-\\u0C83\\u0C85-\\u0C8C\\u0C8E-\\u0C90\\u0C92-\\u0CA8\\u0CAA-\\u0CB3\\u0CB5-\\u0CB9\\u0CBC-\\u0CC4\\u0CC6-\\u0CC8\\u0CCA-\\u0CCD\\u0CD5\\u0CD6\\u0CDE\\u0CE0-\\u0CE3\\u0CE6-\\u0CEF\\u0CF1\\u0CF2\\u0D01-\\u0D03\\u0D05-\\u0D0C\\u0D0E-\\u0D10\\u0D12-\\u0D3A\\u0D3D-\\u0D44\\u0D46-\\u0D48\\u0D4A-\\u0D4E\\u0D57\\u0D60-\\u0D63\\u0D66-\\u0D6F\\u0D7A-\\u0D7F\\u0D82\\u0D83\\u0D85-\\u0D96\\u0D9A-\\u0DB1\\u0DB3-\\u0DBB\\u0DBD\\u0DC0-\\u0DC6\\u0DCA\\u0DCF-\\u0DD4\\u0DD6\\u0DD8-\\u0DDF\\u0DE6-\\u0DEF\\u0DF2\\u0DF3\\u0E01-\\u0E3A\\u0E40-\\u0E4E\\u0E50-\\u0E59\\u0E81\\u0E82\\u0E84\\u0E87\\u0E88\\u0E8A\\u0E8D\\u0E94-\\u0E97\\u0E99-\\u0E9F\\u0EA1-\\u0EA3\\u0EA5\\u0EA7\\u0EAA\\u0EAB\\u0EAD-\\u0EB9\\u0EBB-\\u0EBD\\u0EC0-\\u0EC4\\u0EC6\\u0EC8-\\u0ECD\\u0ED0-\\u0ED9\\u0EDC-\\u0EDF\\u0F00\\u0F18\\u0F19\\u0F20-\\u0F29\\u0F35\\u0F37\\u0F39\\u0F3E-\\u0F47\\u0F49-\\u0F6C\\u0F71-\\u0F84\\u0F86-\\u0F97\\u0F99-\\u0FBC\\u0FC6\\u1000-\\u1049\\u1050-\\u109D\\u10A0-\\u10C5\\u10C7\\u10CD\\u10D0-\\u10FA\\u10FC-\\u1248\\u124A-\\u124D\\u1250-\\u1256\\u1258\\u125A-\\u125D\\u1260-\\u1288\\u128A-\\u128D\\u1290-\\u12B0\\u12B2-\\u12B5\\u12B8-\\u12BE\\u12C0\\u12C2-\\u12C5\\u12C8-\\u12D6\\u12D8-\\u1310\\u1312-\\u1315\\u1318-\\u135A\\u135D-\\u135F\\u1380-\\u138F\\u13A0-\\u13F4\\u1401-\\u166C\\u166F-\\u167F\\u1681-\\u169A\\u16A0-\\u16EA\\u16EE-\\u16F8\\u1700-\\u170C\\u170E-\\u1714\\u1720-\\u1734\\u1740-\\u1753\\u1760-\\u176C\\u176E-\\u1770\\u1772\\u1773\\u1780-\\u17D3\\u17D7\\u17DC\\u17DD\\u17E0-\\u17E9\\u180B-\\u180D\\u1810-\\u1819\\u1820-\\u1877\\u1880-\\u18AA\\u18B0-\\u18F5\\u1900-\\u191E\\u1920-\\u192B\\u1930-\\u193B\\u1946-\\u196D\\u1970-\\u1974\\u1980-\\u19AB\\u19B0-\\u19C9\\u19D0-\\u19D9\\u1A00-\\u1A1B\\u1A20-\\u1A5E\\u1A60-\\u1A7C\\u1A7F-\\u1A89\\u1A90-\\u1A99\\u1AA7\\u1AB0-\\u1ABD\\u1B00-\\u1B4B\\u1B50-\\u1B59\\u1B6B-\\u1B73\\u1B80-\\u1BF3\\u1C00-\\u1C37\\u1C40-\\u1C49\\u1C4D-\\u1C7D\\u1CD0-\\u1CD2\\u1CD4-\\u1CF6\\u1CF8\\u1CF9\\u1D00-\\u1DF5\\u1DFC-\\u1F15\\u1F18-\\u1F1D\\u1F20-\\u1F45\\u1F48-\\u1F4D\\u1F50-\\u1F57\\u1F59\\u1F5B\\u1F5D\\u1F5F-\\u1F7D\\u1F80-\\u1FB4\\u1FB6-\\u1FBC\\u1FBE\\u1FC2-\\u1FC4\\u1FC6-\\u1FCC\\u1FD0-\\u1FD3\\u1FD6-\\u1FDB\\u1FE0-\\u1FEC\\u1FF2-\\u1FF4\\u1FF6-\\u1FFC\\u200C\\u200D\\u203F\\u2040\\u2054\\u2071\\u207F\\u2090-\\u209C\\u20D0-\\u20DC\\u20E1\\u20E5-\\u20F0\\u2102\\u2107\\u210A-\\u2113\\u2115\\u2119-\\u211D\\u2124\\u2126\\u2128\\u212A-\\u212D\\u212F-\\u2139\\u213C-\\u213F\\u2145-\\u2149\\u214E\\u2160-\\u2188\\u2C00-\\u2C2E\\u2C30-\\u2C5E\\u2C60-\\u2CE4\\u2CEB-\\u2CF3\\u2D00-\\u2D25\\u2D27\\u2D2D\\u2D30-\\u2D67\\u2D6F\\u2D7F-\\u2D96\\u2DA0-\\u2DA6\\u2DA8-\\u2DAE\\u2DB0-\\u2DB6\\u2DB8-\\u2DBE\\u2DC0-\\u2DC6\\u2DC8-\\u2DCE\\u2DD0-\\u2DD6\\u2DD8-\\u2DDE\\u2DE0-\\u2DFF\\u2E2F\\u3005-\\u3007\\u3021-\\u302F\\u3031-\\u3035\\u3038-\\u303C\\u3041-\\u3096\\u3099\\u309A\\u309D-\\u309F\\u30A1-\\u30FA\\u30FC-\\u30FF\\u3105-\\u312D\\u3131-\\u318E\\u31A0-\\u31BA\\u31F0-\\u31FF\\u3400-\\u4DB5\\u4E00-\\u9FCC\\uA000-\\uA48C\\uA4D0-\\uA4FD\\uA500-\\uA60C\\uA610-\\uA62B\\uA640-\\uA66F\\uA674-\\uA67D\\uA67F-\\uA69D\\uA69F-\\uA6F1\\uA717-\\uA71F\\uA722-\\uA788\\uA78B-\\uA78E\\uA790-\\uA7AD\\uA7B0\\uA7B1\\uA7F7-\\uA827\\uA840-\\uA873\\uA880-\\uA8C4\\uA8D0-\\uA8D9\\uA8E0-\\uA8F7\\uA8FB\\uA900-\\uA92D\\uA930-\\uA953\\uA960-\\uA97C\\uA980-\\uA9C0\\uA9CF-\\uA9D9\\uA9E0-\\uA9FE\\uAA00-\\uAA36\\uAA40-\\uAA4D\\uAA50-\\uAA59\\uAA60-\\uAA76\\uAA7A-\\uAAC2\\uAADB-\\uAADD\\uAAE0-\\uAAEF\\uAAF2-\\uAAF6\\uAB01-\\uAB06\\uAB09-\\uAB0E\\uAB11-\\uAB16\\uAB20-\\uAB26\\uAB28-\\uAB2E\\uAB30-\\uAB5A\\uAB5C-\\uAB5F\\uAB64\\uAB65\\uABC0-\\uABEA\\uABEC\\uABED\\uABF0-\\uABF9\\uAC00-\\uD7A3\\uD7B0-\\uD7C6\\uD7CB-\\uD7FB\\uF900-\\uFA6D\\uFA70-\\uFAD9\\uFB00-\\uFB06\\uFB13-\\uFB17\\uFB1D-\\uFB28\\uFB2A-\\uFB36\\uFB38-\\uFB3C\\uFB3E\\uFB40\\uFB41\\uFB43\\uFB44\\uFB46-\\uFBB1\\uFBD3-\\uFD3D\\uFD50-\\uFD8F\\uFD92-\\uFDC7\\uFDF0-\\uFDFB\\uFE00-\\uFE0F\\uFE20-\\uFE2D\\uFE33\\uFE34\\uFE4D-\\uFE4F\\uFE70-\\uFE74\\uFE76-\\uFEFC\\uFF10-\\uFF19\\uFF21-\\uFF3A\\uFF3F\\uFF41-\\uFF5A\\uFF66-\\uFFBE\\uFFC2-\\uFFC7\\uFFCA-\\uFFCF\\uFFD2-\\uFFD7\\uFFDA-\\uFFDC]");
+
+  // Ensure the condition is true, otherwise throw an error.
+  // This is only to have a better contract semantic, i.e. another safety net
+  // to catch a logic error. The condition shall be fulfilled in normal case.
+  // Do NOT use this to enforce a certain condition on any user input.
+
+  function assert(condition, message) {
+    /* istanbul ignore next */
+    if (!condition) {
+      throw new Error('ASSERT: ' + message);
+    }
+  }
+
+  function isDecimalDigit(ch) {
+    return (ch >= 0x30 && ch <= 0x39); // 0..9
+  }
+
+  function isHexDigit(ch) {
+    return '0123456789abcdefABCDEF'.indexOf(ch) >= 0;
+  }
+
+  function isOctalDigit(ch) {
+    return '01234567'.indexOf(ch) >= 0;
+  }
+
+  // 7.2 White Space
+
+  function isWhiteSpace(ch) {
+    return (ch === 0x20) || (ch === 0x09) || (ch === 0x0B) || (ch === 0x0C) || (ch === 0xA0) ||
+      (ch >= 0x1680 && [0x1680, 0x180E, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A, 0x202F, 0x205F, 0x3000, 0xFEFF].indexOf(ch) >= 0);
+  }
+
+  // 7.3 Line Terminators
+
+  function isLineTerminator(ch) {
+    return (ch === 0x0A) || (ch === 0x0D) || (ch === 0x2028) || (ch === 0x2029);
+  }
+
+  // 7.6 Identifier Names and Identifiers
+
+  function isIdentifierStart(ch) {
+    return (ch === 0x24) || (ch === 0x5F) || // $ (dollar) and _ (underscore)
+      (ch >= 0x41 && ch <= 0x5A) || // A..Z
+      (ch >= 0x61 && ch <= 0x7A) || // a..z
+      (ch === 0x5C) || // \ (backslash)
+      ((ch >= 0x80) && RegexNonAsciiIdentifierStart.test(String.fromCharCode(ch)));
+  }
+
+  function isIdentifierPart(ch) {
+    return (ch === 0x24) || (ch === 0x5F) || // $ (dollar) and _ (underscore)
+      (ch >= 0x41 && ch <= 0x5A) || // A..Z
+      (ch >= 0x61 && ch <= 0x7A) || // a..z
+      (ch >= 0x30 && ch <= 0x39) || // 0..9
+      (ch === 0x5C) || // \ (backslash)
+      ((ch >= 0x80) && RegexNonAsciiIdentifierPart.test(String.fromCharCode(ch)));
+  }
+
+  // 7.6.1.1 Keywords
+
+  var keywords = {
+    'if':1, 'in':1, 'do':1,
+    'var':1, 'for':1, 'new':1, 'try':1, 'let':1,
+    'this':1, 'else':1, 'case':1, 'void':1, 'with':1, 'enum':1,
+    'while':1, 'break':1, 'catch':1, 'throw':1, 'const':1, 'yield':1, 'class':1, 'super':1,
+    'return':1, 'typeof':1, 'delete':1, 'switch':1, 'export':1, 'import':1, 'public':1, 'static':1,
+    'default':1, 'finally':1, 'extends':1, 'package':1, 'private':1,
+    'function':1, 'continue':1, 'debugger':1,
+    'interface':1, 'protected':1,
+    'instanceof':1, 'implements':1
+  };
+
+  function skipComment() {
+    var ch;
+
+    while (index < length) {
+      ch = source$1.charCodeAt(index);
+
+      if (isWhiteSpace(ch) || isLineTerminator(ch)) {
+        ++index;
       } else {
-        // IN-PLACE UPDATE
-        this._update(mdef, item._svg, item);
+        break;
       }
-      item._update = id;
-    }
-    return !this._dirtyAll;
-  };
-
-  function dirtyParents(item, id) {
-    for (; item && item.dirty !== id; item = item.mark.group) {
-      item.dirty = id;
-      if (item.mark && item.mark.dirty !== id) {
-        item.mark.dirty = id;
-      } else return;
     }
   }
 
+  function scanHexEscape(prefix) {
+    var i, len, ch, code = 0;
 
-  // -- Construct & maintain scenegraph to SVG mapping ---
-
-  // Draw a mark container.
-  prototype$L.draw = function (el, scene, prev) {
-    if (!this.isDirty(scene)) return scene._svg;
-
-    var renderer = this,
-      svg = this._svg,
-      mdef = Marks[scene.marktype],
-      events = scene.interactive === false ? 'none' : null,
-      isGroup = mdef.tag === 'g',
-      sibling = null,
-      i = 0,
-      parent;
-
-    parent = bind(scene, el, prev, 'g', svg);
-    if (scene.role == 'axis') {
-      parent.setAttribute('data-datum', JSON.stringify({
-        _TYPE: 'axis',
-        type: scene.items[0].datum.orient,
-        position: ''
-      }));
-    }
-    if (scene.role == 'legend') ;
-    parent.setAttribute('class', cssClass(scene));
-    if (!isGroup) {
-      parent.style.setProperty('pointer-events', events);
-    }
-    if (scene.clip) {
-      parent.setAttribute('clip-path', clip(renderer, scene, scene.group));
-    } else {
-      parent.removeAttribute('clip-path');
-    }
-
-    function process(item) {
-      var dirty = renderer.isDirty(item),
-        node = bind(item, parent, sibling, mdef.tag, svg);
-
-      if (dirty) {
-        renderer._update(mdef, node, item);
-        if (isGroup) recurse(renderer, node, item);
+    len = (prefix === 'u') ? 4 : 2;
+    for (i = 0; i < len; ++i) {
+      if (index < length && isHexDigit(source$1[index])) {
+        ch = source$1[index++];
+        code = code * 16 + '0123456789abcdef'.indexOf(ch.toLowerCase());
+      } else {
+        throwError({}, MessageUnexpectedToken, ILLEGAL);
       }
-
-      sibling = node;
-      ++i;
     }
-
-    if (mdef.nested) {
-      if (scene.items.length) process(scene.items[0]);
-    } else {
-      visit(scene, process);
-    }
-
-    domClear(parent, i);
-    return parent;
-  };
-
-  // Recursively process group contents.
-  function recurse(renderer, el, group) {
-    el = el.lastChild;
-    var prev, idx = 0;
-
-    visit(group, function (item) {
-      prev = renderer.draw(el, item, prev);
-      ++idx;
-    });
-
-    // remove any extraneous DOM elements
-    domClear(el, 1 + idx);
+    return String.fromCharCode(code);
   }
 
-  // Bind a scenegraph item to an SVG DOM element.
-  // Create new SVG elements as needed.
-  function bind(item, el, sibling, tag, svg) {
-    var node = item._svg, doc;
+  function scanUnicodeCodePointEscape() {
+    var ch, code, cu1, cu2;
 
-    // create a new dom node if needed
-    if (!node) {
-      doc = el.ownerDocument;
-      node = domCreate(doc, tag, ns);
-      item._svg = node;
+    ch = source$1[index];
+    code = 0;
 
-      if (item.mark) {
-        node.__data__ = item;
-        node.__values__ = { fill: 'default' };
+    // At least, one hex digit is required.
+    if (ch === '}') {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
 
-        // if group, create background and foreground elements
-        if (tag === 'g') {
-          var bg = domCreate(doc, 'path', ns);
-          bg.setAttribute('class', 'background');
-          node.appendChild(bg);
-          bg.__data__ = item;
+    while (index < length) {
+      ch = source$1[index++];
+      if (!isHexDigit(ch)) {
+        break;
+      }
+      code = code * 16 + '0123456789abcdef'.indexOf(ch.toLowerCase());
+    }
 
-          var fg = domCreate(doc, 'g', ns);
-          node.appendChild(fg);
-          fg.__data__ = item;
+    if (code > 0x10FFFF || ch !== '}') {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
+
+    // UTF-16 Encoding
+    if (code <= 0xFFFF) {
+      return String.fromCharCode(code);
+    }
+    cu1 = ((code - 0x10000) >> 10) + 0xD800;
+    cu2 = ((code - 0x10000) & 1023) + 0xDC00;
+    return String.fromCharCode(cu1, cu2);
+  }
+
+  function getEscapedIdentifier() {
+    var ch, id;
+
+    ch = source$1.charCodeAt(index++);
+    id = String.fromCharCode(ch);
+
+    // '\u' (U+005C, U+0075) denotes an escaped character.
+    if (ch === 0x5C) {
+      if (source$1.charCodeAt(index) !== 0x75) {
+        throwError({}, MessageUnexpectedToken, ILLEGAL);
+      }
+      ++index;
+      ch = scanHexEscape('u');
+      if (!ch || ch === '\\' || !isIdentifierStart(ch.charCodeAt(0))) {
+        throwError({}, MessageUnexpectedToken, ILLEGAL);
+      }
+      id = ch;
+    }
+
+    while (index < length) {
+      ch = source$1.charCodeAt(index);
+      if (!isIdentifierPart(ch)) {
+        break;
+      }
+      ++index;
+      id += String.fromCharCode(ch);
+
+      // '\u' (U+005C, U+0075) denotes an escaped character.
+      if (ch === 0x5C) {
+        id = id.substr(0, id.length - 1);
+        if (source$1.charCodeAt(index) !== 0x75) {
+          throwError({}, MessageUnexpectedToken, ILLEGAL);
+        }
+        ++index;
+        ch = scanHexEscape('u');
+        if (!ch || ch === '\\' || !isIdentifierPart(ch.charCodeAt(0))) {
+          throwError({}, MessageUnexpectedToken, ILLEGAL);
+        }
+        id += ch;
+      }
+    }
+
+    return id;
+  }
+
+  function getIdentifier() {
+    var start, ch;
+
+    start = index++;
+    while (index < length) {
+      ch = source$1.charCodeAt(index);
+      if (ch === 0x5C) {
+        // Blackslash (U+005C) marks Unicode escape sequence.
+        index = start;
+        return getEscapedIdentifier();
+      }
+      if (isIdentifierPart(ch)) {
+        ++index;
+      } else {
+        break;
+      }
+    }
+
+    return source$1.slice(start, index);
+  }
+
+  function scanIdentifier() {
+    var start, id, type;
+
+    start = index;
+
+    // Backslash (U+005C) starts an escaped character.
+    id = (source$1.charCodeAt(index) === 0x5C) ? getEscapedIdentifier() : getIdentifier();
+
+    // There is no keyword or literal with only one character.
+    // Thus, it must be an identifier.
+    if (id.length === 1) {
+      type = TokenIdentifier;
+    } else if (keywords.hasOwnProperty(id)) {
+      type = TokenKeyword;
+    } else if (id === 'null') {
+      type = TokenNullLiteral;
+    } else if (id === 'true' || id === 'false') {
+      type = TokenBooleanLiteral;
+    } else {
+      type = TokenIdentifier;
+    }
+
+    return {
+      type: type,
+      value: id,
+      start: start,
+      end: index
+    };
+  }
+
+  // 7.7 Punctuators
+
+  function scanPunctuator() {
+    var start = index,
+      code = source$1.charCodeAt(index),
+      code2,
+      ch1 = source$1[index],
+      ch2,
+      ch3,
+      ch4;
+
+    switch (code) {
+
+      // Check for most common single-character punctuators.
+      case 0x2E: // . dot
+      case 0x28: // ( open bracket
+      case 0x29: // ) close bracket
+      case 0x3B: // ; semicolon
+      case 0x2C: // , comma
+      case 0x7B: // { open curly brace
+      case 0x7D: // } close curly brace
+      case 0x5B: // [
+      case 0x5D: // ]
+      case 0x3A: // :
+      case 0x3F: // ?
+      case 0x7E: // ~
+        ++index;
+        return {
+          type: TokenPunctuator,
+          value: String.fromCharCode(code),
+          start: start,
+          end: index
+        };
+
+      default:
+        code2 = source$1.charCodeAt(index + 1);
+
+        // '=' (U+003D) marks an assignment or comparison operator.
+        if (code2 === 0x3D) {
+          switch (code) {
+            case 0x2B: // +
+            case 0x2D: // -
+            case 0x2F: // /
+            case 0x3C: // <
+            case 0x3E: // >
+            case 0x5E: // ^
+            case 0x7C: // |
+            case 0x25: // %
+            case 0x26: // &
+            case 0x2A: // *
+              index += 2;
+              return {
+                type: TokenPunctuator,
+                value: String.fromCharCode(code) + String.fromCharCode(code2),
+                start: start,
+                end: index
+              };
+
+            case 0x21: // !
+            case 0x3D: // =
+              index += 2;
+
+              // !== and ===
+              if (source$1.charCodeAt(index) === 0x3D) {
+                ++index;
+              }
+              return {
+                type: TokenPunctuator,
+                value: source$1.slice(start, index),
+                start: start,
+                end: index
+              };
+          }
+        }
+    }
+
+    // 4-character punctuator: >>>=
+
+    ch4 = source$1.substr(index, 4);
+
+    if (ch4 === '>>>=') {
+      index += 4;
+      return {
+        type: TokenPunctuator,
+        value: ch4,
+        start: start,
+        end: index
+      };
+    }
+
+    // 3-character punctuators: === !== >>> <<= >>=
+
+    ch3 = ch4.substr(0, 3);
+
+    if (ch3 === '>>>' || ch3 === '<<=' || ch3 === '>>=') {
+      index += 3;
+      return {
+        type: TokenPunctuator,
+        value: ch3,
+        start: start,
+        end: index
+      };
+    }
+
+    // Other 2-character punctuators: ++ -- << >> && ||
+    ch2 = ch3.substr(0, 2);
+
+    if ((ch1 === ch2[1] && ('+-<>&|'.indexOf(ch1) >= 0)) || ch2 === '=>') {
+      index += 2;
+      return {
+        type: TokenPunctuator,
+        value: ch2,
+        start: start,
+        end: index
+      };
+    }
+
+    // 1-character punctuators: < > = ! + - * % & | ^ /
+
+    if ('<>=!+-*%&|^/'.indexOf(ch1) >= 0) {
+      ++index;
+      return {
+        type: TokenPunctuator,
+        value: ch1,
+        start: start,
+        end: index
+      };
+    }
+
+    throwError({}, MessageUnexpectedToken, ILLEGAL);
+  }
+
+  // 7.8.3 Numeric Literals
+
+  function scanHexLiteral(start) {
+    var number = '';
+
+    while (index < length) {
+      if (!isHexDigit(source$1[index])) {
+        break;
+      }
+      number += source$1[index++];
+    }
+
+    if (number.length === 0) {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
+
+    if (isIdentifierStart(source$1.charCodeAt(index))) {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
+
+    return {
+      type: TokenNumericLiteral,
+      value: parseInt('0x' + number, 16),
+      start: start,
+      end: index
+    };
+  }
+
+  function scanOctalLiteral(start) {
+    var number = '0' + source$1[index++];
+    while (index < length) {
+      if (!isOctalDigit(source$1[index])) {
+        break;
+      }
+      number += source$1[index++];
+    }
+
+    if (isIdentifierStart(source$1.charCodeAt(index)) || isDecimalDigit(source$1.charCodeAt(index))) {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
+
+    return {
+      type: TokenNumericLiteral,
+      value: parseInt(number, 8),
+      octal: true,
+      start: start,
+      end: index
+    };
+  }
+
+  function scanNumericLiteral() {
+    var number, start, ch;
+
+    ch = source$1[index];
+    assert(isDecimalDigit(ch.charCodeAt(0)) || (ch === '.'),
+      'Numeric literal must start with a decimal digit or a decimal point');
+
+    start = index;
+    number = '';
+    if (ch !== '.') {
+      number = source$1[index++];
+      ch = source$1[index];
+
+      // Hex number starts with '0x'.
+      // Octal number starts with '0'.
+      if (number === '0') {
+        if (ch === 'x' || ch === 'X') {
+          ++index;
+          return scanHexLiteral(start);
+        }
+        if (isOctalDigit(ch)) {
+          return scanOctalLiteral(start);
+        }
+
+        // decimal number starts with '0' such as '09' is illegal.
+        if (ch && isDecimalDigit(ch.charCodeAt(0))) {
+          throwError({}, MessageUnexpectedToken, ILLEGAL);
+        }
+      }
+
+      while (isDecimalDigit(source$1.charCodeAt(index))) {
+        number += source$1[index++];
+      }
+      ch = source$1[index];
+    }
+
+    if (ch === '.') {
+      number += source$1[index++];
+      while (isDecimalDigit(source$1.charCodeAt(index))) {
+        number += source$1[index++];
+      }
+      ch = source$1[index];
+    }
+
+    if (ch === 'e' || ch === 'E') {
+      number += source$1[index++];
+
+      ch = source$1[index];
+      if (ch === '+' || ch === '-') {
+        number += source$1[index++];
+      }
+      if (isDecimalDigit(source$1.charCodeAt(index))) {
+        while (isDecimalDigit(source$1.charCodeAt(index))) {
+          number += source$1[index++];
+        }
+      } else {
+        throwError({}, MessageUnexpectedToken, ILLEGAL);
+      }
+    }
+
+    if (isIdentifierStart(source$1.charCodeAt(index))) {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
+
+    return {
+      type: TokenNumericLiteral,
+      value: parseFloat(number),
+      start: start,
+      end: index
+    };
+  }
+
+  // 7.8.4 String Literals
+
+  function scanStringLiteral() {
+    var str = '',
+      quote, start, ch, code, octal = false;
+
+    quote = source$1[index];
+    assert((quote === '\'' || quote === '"'),
+      'String literal must starts with a quote');
+
+    start = index;
+    ++index;
+
+    while (index < length) {
+      ch = source$1[index++];
+
+      if (ch === quote) {
+        quote = '';
+        break;
+      } else if (ch === '\\') {
+        ch = source$1[index++];
+        if (!ch || !isLineTerminator(ch.charCodeAt(0))) {
+          switch (ch) {
+            case 'u':
+            case 'x':
+              if (source$1[index] === '{') {
+                ++index;
+                str += scanUnicodeCodePointEscape();
+              } else {
+                str += scanHexEscape(ch);
+              }
+              break;
+            case 'n':
+              str += '\n';
+              break;
+            case 'r':
+              str += '\r';
+              break;
+            case 't':
+              str += '\t';
+              break;
+            case 'b':
+              str += '\b';
+              break;
+            case 'f':
+              str += '\f';
+              break;
+            case 'v':
+              str += '\x0B';
+              break;
+
+            default:
+              if (isOctalDigit(ch)) {
+                code = '01234567'.indexOf(ch);
+
+                // \0 is not octal escape sequence
+                if (code !== 0) {
+                  octal = true;
+                }
+
+                if (index < length && isOctalDigit(source$1[index])) {
+                  octal = true;
+                  code = code * 8 + '01234567'.indexOf(source$1[index++]);
+
+                  // 3 digits are only allowed when string starts
+                  // with 0, 1, 2, 3
+                  if ('0123'.indexOf(ch) >= 0 &&
+                    index < length &&
+                    isOctalDigit(source$1[index])) {
+                    code = code * 8 + '01234567'.indexOf(source$1[index++]);
+                  }
+                }
+                str += String.fromCharCode(code);
+              } else {
+                str += ch;
+              }
+              break;
+          }
+        } else {
+          if (ch === '\r' && source$1[index] === '\n') {
+            ++index;
+          }
+        }
+      } else if (isLineTerminator(ch.charCodeAt(0))) {
+        break;
+      } else {
+        str += ch;
+      }
+    }
+
+    if (quote !== '') {
+      throwError({}, MessageUnexpectedToken, ILLEGAL);
+    }
+
+    return {
+      type: TokenStringLiteral,
+      value: str,
+      octal: octal,
+      start: start,
+      end: index
+    };
+  }
+
+  function testRegExp(pattern, flags) {
+    var tmp = pattern;
+
+    if (flags.indexOf('u') >= 0) {
+      // Replace each astral symbol and every Unicode code point
+      // escape sequence with a single ASCII symbol to avoid throwing on
+      // regular expressions that are only valid in combination with the
+      // `/u` flag.
+      // Note: replacing with the ASCII symbol `x` might cause false
+      // negatives in unlikely scenarios. For example, `[\u{61}-b]` is a
+      // perfectly valid pattern that is equivalent to `[a-b]`, but it
+      // would be replaced by `[x-b]` which throws an error.
+      tmp = tmp
+        .replace(/\\u\{([0-9a-fA-F]+)\}/g, function($0, $1) {
+          if (parseInt($1, 16) <= 0x10FFFF) {
+            return 'x';
+          }
+          throwError({}, MessageInvalidRegExp);
+        })
+        .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, 'x');
+    }
+
+    // First, detect invalid regular expressions.
+    try {
+      new RegExp(tmp);
+    } catch (e) {
+      throwError({}, MessageInvalidRegExp);
+    }
+
+    // Return a regular expression object for this pattern-flag pair, or
+    // `null` in case the current environment doesn't support the flags it
+    // uses.
+    try {
+      return new RegExp(pattern, flags);
+    } catch (exception) {
+      return null;
+    }
+  }
+
+  function scanRegExpBody() {
+    var ch, str, classMarker, terminated, body;
+
+    ch = source$1[index];
+    assert(ch === '/', 'Regular expression literal must start with a slash');
+    str = source$1[index++];
+
+    classMarker = false;
+    terminated = false;
+    while (index < length) {
+      ch = source$1[index++];
+      str += ch;
+      if (ch === '\\') {
+        ch = source$1[index++];
+        // ECMA-262 7.8.5
+        if (isLineTerminator(ch.charCodeAt(0))) {
+          throwError({}, MessageUnterminatedRegExp);
+        }
+        str += ch;
+      } else if (isLineTerminator(ch.charCodeAt(0))) {
+        throwError({}, MessageUnterminatedRegExp);
+      } else if (classMarker) {
+        if (ch === ']') {
+          classMarker = false;
+        }
+      } else {
+        if (ch === '/') {
+          terminated = true;
+          break;
+        } else if (ch === '[') {
+          classMarker = true;
         }
       }
     }
 
-    // (re-)insert if (a) not contained in SVG or (b) sibling order has changed
-    if (node.ownerSVGElement !== svg || hasSiblings(item) && node.previousSibling !== sibling) {
-      el.insertBefore(node, sibling ? sibling.nextSibling : el.firstChild);
+    if (!terminated) {
+      throwError({}, MessageUnterminatedRegExp);
     }
 
+    // Exclude leading and trailing slash.
+    body = str.substr(1, str.length - 2);
+    return {
+      value: body,
+      literal: str
+    };
+  }
+
+  function scanRegExpFlags() {
+    var ch, str, flags;
+
+    str = '';
+    flags = '';
+    while (index < length) {
+      ch = source$1[index];
+      if (!isIdentifierPart(ch.charCodeAt(0))) {
+        break;
+      }
+
+      ++index;
+      if (ch === '\\' && index < length) {
+        throwError({}, MessageUnexpectedToken, ILLEGAL);
+      } else {
+        flags += ch;
+        str += ch;
+      }
+    }
+
+    if (flags.search(/[^gimuy]/g) >= 0) {
+      throwError({}, MessageInvalidRegExp, flags);
+    }
+
+    return {
+      value: flags,
+      literal: str
+    };
+  }
+
+  function scanRegExp() {
+    var start, body, flags, value;
+
+    lookahead = null;
+    skipComment();
+    start = index;
+
+    body = scanRegExpBody();
+    flags = scanRegExpFlags();
+    value = testRegExp(body.value, flags.value);
+
+    return {
+      literal: body.literal + flags.literal,
+      value: value,
+      regex: {
+        pattern: body.value,
+        flags: flags.value
+      },
+      start: start,
+      end: index
+    };
+  }
+
+  function isIdentifierName(token) {
+    return token.type === TokenIdentifier ||
+      token.type === TokenKeyword ||
+      token.type === TokenBooleanLiteral ||
+      token.type === TokenNullLiteral;
+  }
+
+  function advance() {
+    var ch;
+
+    skipComment();
+
+    if (index >= length) {
+      return {
+        type: TokenEOF,
+        start: index,
+        end: index
+      };
+    }
+
+    ch = source$1.charCodeAt(index);
+
+    if (isIdentifierStart(ch)) {
+      return scanIdentifier();
+    }
+
+    // Very common: ( and ) and ;
+    if (ch === 0x28 || ch === 0x29 || ch === 0x3B) {
+      return scanPunctuator();
+    }
+
+    // String literal starts with single quote (U+0027) or double quote (U+0022).
+    if (ch === 0x27 || ch === 0x22) {
+      return scanStringLiteral();
+    }
+
+
+    // Dot (.) U+002E can also start a floating-point number, hence the need
+    // to check the next character.
+    if (ch === 0x2E) {
+      if (isDecimalDigit(source$1.charCodeAt(index + 1))) {
+        return scanNumericLiteral();
+      }
+      return scanPunctuator();
+    }
+
+    if (isDecimalDigit(ch)) {
+      return scanNumericLiteral();
+    }
+
+    return scanPunctuator();
+  }
+
+  function lex() {
+    var token;
+
+    token = lookahead;
+    index = token.end;
+
+    lookahead = advance();
+
+    index = token.end;
+
+    return token;
+  }
+
+  function peek$1() {
+    var pos;
+
+    pos = index;
+
+    lookahead = advance();
+    index = pos;
+  }
+
+  function finishArrayExpression(elements) {
+    var node = new ASTNode(SyntaxArrayExpression);
+    node.elements = elements;
     return node;
   }
 
-  function hasSiblings(item) {
-    var parent = item.mark || item.group;
-    return parent && parent.items.length > 1;
+  function finishBinaryExpression(operator, left, right) {
+    var node = new ASTNode((operator === '||' || operator === '&&') ? SyntaxLogicalExpression : SyntaxBinaryExpression);
+    node.operator = operator;
+    node.left = left;
+    node.right = right;
+    return node;
   }
 
+  function finishCallExpression(callee, args) {
+    var node = new ASTNode(SyntaxCallExpression);
+    node.callee = callee;
+    node.arguments = args;
+    return node;
+  }
 
-  // -- Set attributes & styles on SVG elements ---
+  function finishConditionalExpression(test, consequent, alternate) {
+    var node = new ASTNode(SyntaxConditionalExpression);
+    node.test = test;
+    node.consequent = consequent;
+    node.alternate = alternate;
+    return node;
+  }
 
-  var element = null, // temp var for current SVG element
-    values = null;  // temp var for current values hash
+  function finishIdentifier(name) {
+    var node = new ASTNode(SyntaxIdentifier);
+    node.name = name;
+    return node;
+  }
 
-  // Extra configuration for certain mark types
-  var mark_extras = {
-    group: function (mdef, el, item) {
-      values = el.__values__; // use parent's values hash
-
-      element = el.childNodes[1];
-      mdef.foreground(emit, item, this);
-
-      element = el.childNodes[0];
-      mdef.background(emit, item, this);
-
-      var value = item.mark.interactive === false ? 'none' : null;
-      if (value !== values.events) {
-        element.style.setProperty('pointer-events', value);
-        values.events = value;
+  function finishLiteral(token) {
+    var node = new ASTNode(SyntaxLiteral);
+    node.value = token.value;
+    node.raw = source$1.slice(token.start, token.end);
+    if (token.regex) {
+      if (node.raw === '//') {
+        node.raw = '/(?:)/';
       }
-    },
-    text: function (mdef, el, item) {
-      var value;
-
-      value = textValue(item);
-      if (value !== values.text) {
-        el.textContent = value;
-        values.text = value;
-      }
-
-      setStyle(el, 'font-family', fontFamily(item));
-      setStyle(el, 'font-size', fontSize(item) + 'px');
-      setStyle(el, 'font-style', item.fontStyle);
-      setStyle(el, 'font-variant', item.fontVariant);
-      setStyle(el, 'font-weight', item.fontWeight);
+      node.regex = token.regex;
     }
-  };
+    return node;
+  }
 
-  function setStyle(el, name, value) {
-    if (value !== values[name]) {
-      if (value == null) {
-        el.style.removeProperty(name);
-      } else {
-        el.style.setProperty(name, value + '');
-      }
-      values[name] = value;
+  function finishMemberExpression(accessor, object, property) {
+    var node = new ASTNode(SyntaxMemberExpression);
+    node.computed = accessor === '[';
+    node.object = object;
+    node.property = property;
+    if (!node.computed) property.member = true;
+    return node;
+  }
+
+  function finishObjectExpression(properties) {
+    var node = new ASTNode(SyntaxObjectExpression);
+    node.properties = properties;
+    return node;
+  }
+
+  function finishProperty(kind, key, value) {
+    var node = new ASTNode(SyntaxProperty);
+    node.key = key;
+    node.value = value;
+    node.kind = kind;
+    return node;
+  }
+
+  function finishUnaryExpression(operator, argument) {
+    var node = new ASTNode(SyntaxUnaryExpression);
+    node.operator = operator;
+    node.argument = argument;
+    node.prefix = true;
+    return node;
+  }
+
+  // Throw an exception
+
+  function throwError(token, messageFormat) {
+    var error,
+      args = Array.prototype.slice.call(arguments, 2),
+      msg = messageFormat.replace(
+        /%(\d)/g,
+        function(whole, index) {
+          assert(index < args.length, 'Message reference must be in range');
+          return args[index];
+        }
+      );
+
+
+    error = new Error(msg);
+    error.index = index;
+    error.description = msg;
+    throw error;
+  }
+
+  // Throw an exception because of the token.
+
+  function throwUnexpected(token) {
+    if (token.type === TokenEOF) {
+      throwError(token, MessageUnexpectedEOS);
+    }
+
+    if (token.type === TokenNumericLiteral) {
+      throwError(token, MessageUnexpectedNumber);
+    }
+
+    if (token.type === TokenStringLiteral) {
+      throwError(token, MessageUnexpectedString);
+    }
+
+    if (token.type === TokenIdentifier) {
+      throwError(token, MessageUnexpectedIdentifier);
+    }
+
+    if (token.type === TokenKeyword) {
+      throwError(token, MessageUnexpectedReserved);
+    }
+
+    // BooleanLiteral, NullLiteral, or Punctuator.
+    throwError(token, MessageUnexpectedToken, token.value);
+  }
+
+  // Expect the next token to match the specified punctuator.
+  // If not, an exception will be thrown.
+
+  function expect(value) {
+    var token = lex();
+    if (token.type !== TokenPunctuator || token.value !== value) {
+      throwUnexpected(token);
     }
   }
 
-  prototype$L._update = function (mdef, el, item) {
-    // set dom element and values cache
-    // provides access to emit method
-    element = el;
-    values = el.__values__;
+  // Return true if the next token matches the specified punctuator.
 
-    // apply svg attributes
-    mdef.attr(emit, item, this);
+  function match(value) {
+    return lookahead.type === TokenPunctuator && lookahead.value === value;
+  }
 
-    // some marks need special treatment
-    var extra = mark_extras[mdef.type];
-    if (extra) extra.call(this, mdef, el, item);
+  // Return true if the next token matches the specified keyword
 
-    // apply svg css styles
-    // note: element may be modified by 'extra' method
-    this.style(element, item);
-  };
+  function matchKeyword(keyword) {
+    return lookahead.type === TokenKeyword && lookahead.value === keyword;
+  }
 
-  function emit(name, value, ns) {
-    // early exit if value is unchanged
-    if (value === values[name]) return;
+  // 11.1.4 Array Initialiser
 
-    if (value != null) {
-      // if value is provided, update DOM attribute
-      if (ns) {
-        element.setAttributeNS(ns, name, value);
+  function parseArrayInitialiser() {
+    var elements = [];
+
+    index = lookahead.start;
+    expect('[');
+
+    while (!match(']')) {
+      if (match(',')) {
+        lex();
+        elements.push(null);
       } else {
-        element.setAttribute(name, value);
+        elements.push(parseConditionalExpression());
+
+        if (!match(']')) {
+          expect(',');
+        }
       }
+    }
+
+    lex();
+
+    return finishArrayExpression(elements);
+  }
+
+  // 11.1.5 Object Initialiser
+
+  function parseObjectPropertyKey() {
+    var token;
+
+    index = lookahead.start;
+    token = lex();
+
+    // Note: This function is called only from parseObjectProperty(), where
+    // EOF and Punctuator tokens are already filtered out.
+
+    if (token.type === TokenStringLiteral || token.type === TokenNumericLiteral) {
+      if (token.octal) {
+        throwError(token, MessageStrictOctalLiteral);
+      }
+      return finishLiteral(token);
+    }
+
+    return finishIdentifier(token.value);
+  }
+
+  function parseObjectProperty() {
+    var token, key, id, value;
+
+    index = lookahead.start;
+    token = lookahead;
+
+    if (token.type === TokenIdentifier) {
+      id = parseObjectPropertyKey();
+      expect(':');
+      value = parseConditionalExpression();
+      return finishProperty('init', id, value);
+    }
+    if (token.type === TokenEOF || token.type === TokenPunctuator) {
+      throwUnexpected(token);
     } else {
-      // else remove DOM attribute
-      if (ns) {
-        element.removeAttributeNS(ns, name);
-      } else {
-        element.removeAttribute(name);
-      }
+      key = parseObjectPropertyKey();
+      expect(':');
+      value = parseConditionalExpression();
+      return finishProperty('init', key, value);
     }
-
-    // note current value for future comparison
-    values[name] = value;
   }
 
-  prototype$L.style = function (el, o) {
-    if (o == null) return;
-    var i, n, prop, name, value;
+  function parseObjectInitialiser() {
+    var properties = [],
+      property, name, key, map = {},
+      toString = String;
 
-    for (i = 0, n = styleProperties.length; i < n; ++i) {
-      prop = styleProperties[i];
-      value = o[prop];
+    index = lookahead.start;
+    expect('{');
 
-      if (prop === 'font') {
-        value = fontFamily(o);
-      }
+    while (!match('}')) {
+      property = parseObjectProperty();
 
-      if (value === values[prop]) continue;
-
-      name = styles[prop];
-      if (value == null) {
-        if (name === 'fill') {
-          el.style.setProperty(name, 'none');
-        } else {
-          el.style.removeProperty(name);
-        }
+      if (property.key.type === SyntaxIdentifier) {
+        name = property.key.name;
       } else {
-        if (isGradient(value)) {
-          value = gradientRef(value, this._defs.gradient, href());
-        }
-        el.style.setProperty(name, value + '');
+        name = toString(property.key.value);
       }
 
-      values[prop] = value;
+      key = '$' + name;
+      if (Object.prototype.hasOwnProperty.call(map, key)) {
+        throwError({}, MessageStrictDuplicateProperty);
+      } else {
+        map[key] = true;
+      }
+
+      properties.push(property);
+
+      if (!match('}')) {
+        expect(',');
+      }
     }
+
+    expect('}');
+
+    return finishObjectExpression(properties);
+  }
+
+  // 11.1.6 The Grouping Operator
+
+  function parseGroupExpression() {
+    var expr;
+
+    expect('(');
+
+    expr = parseExpression();
+
+    expect(')');
+
+    return expr;
+  }
+
+
+  // 11.1 Primary Expressions
+
+  var legalKeywords = {
+    "if": 1,
+    "this": 1
   };
 
-  function href() {
-    var loc;
-    return typeof window === 'undefined' ? ''
-      : (loc = window.location).hash ? loc.href.slice(0, -loc.hash.length)
-        : loc.href;
-  }
+  function parsePrimaryExpression() {
+    var type, token, expr;
 
-  function SVGStringRenderer(loader) {
-    Renderer.call(this, loader);
-
-    this._text = {
-      head: '',
-      bg: '',
-      root: '',
-      foot: '',
-      defs: '',
-      body: ''
-    };
-
-    this._defs = {
-      gradient: {},
-      clipping: {}
-    };
-  }
-
-  var prototype$M = inherits(SVGStringRenderer, Renderer);
-  var base$2 = Renderer.prototype;
-
-  prototype$M.resize = function (width, height, origin, scaleFactor) {
-    base$2.resize.call(this, width, height, origin, scaleFactor);
-    var o = this._origin,
-      t = this._text;
-
-    var attr = {
-      id: 'visChart',
-      class: 'marks',
-      width: this._width * this._scale,
-      height: this._height * this._scale,
-      viewBox: '0 0 ' + this._width + ' ' + this._height
-    };
-    for (var key in metadata) {
-      attr[key] = metadata[key];
+    if (match('(')) {
+      return parseGroupExpression();
     }
 
-    t.head = openTag('svg', attr);
+    if (match('[')) {
+      return parseArrayInitialiser();
+    }
 
-    var bg = this._bgcolor;
-    if (bg === 'transparent' || bg === 'none') bg = null;
+    if (match('{')) {
+      return parseObjectInitialiser();
+    }
 
-    if (bg) {
-      t.bg = openTag('rect', {
-        width: this._width,
-        height: this._height,
-        style: 'fill: ' + bg + ';'
-      }) + closeTag('rect');
+    type = lookahead.type;
+    index = lookahead.start;
+
+
+    if (type === TokenIdentifier || legalKeywords[lookahead.value]) {
+      expr = finishIdentifier(lex().value);
+    } else if (type === TokenStringLiteral || type === TokenNumericLiteral) {
+      if (lookahead.octal) {
+        throwError(lookahead, MessageStrictOctalLiteral);
+      }
+      expr = finishLiteral(lex());
+    } else if (type === TokenKeyword) {
+      throw new Error(DISABLED);
+    } else if (type === TokenBooleanLiteral) {
+      token = lex();
+      token.value = (token.value === 'true');
+      expr = finishLiteral(token);
+    } else if (type === TokenNullLiteral) {
+      token = lex();
+      token.value = null;
+      expr = finishLiteral(token);
+    } else if (match('/') || match('/=')) {
+      expr = finishLiteral(scanRegExp());
+      peek$1();
     } else {
-      t.bg = '';
+      throwUnexpected(lex());
     }
 
-    t.root = openTag('g', {
-      transform: 'translate(' + o + ')'
-    });
-
-    t.foot = closeTag('g') + closeTag('svg');
-
-    return this;
-  };
-
-  prototype$M.background = function () {
-    var rv = base$2.background.apply(this, arguments);
-    if (arguments.length && this._text.head) {
-      this.resize(this._width, this._height, this._origin, this._scale);
-    }
-    return rv;
-  };
-
-  prototype$M.svg = function () {
-    var t = this._text;
-    return t.head + t.bg + t.defs + t.root + t.body + t.foot;
-  };
-
-  prototype$M._render = function (scene) {
-    id$1.reset();
-    this._text.body = this.mark(scene);
-    this._text.defs = this.buildDefs();
-    return this;
-  };
-
-  prototype$M.buildDefs = function () {
-    var all = this._defs,
-      defs = '',
-      i, id, def, tag, stops;
-
-    for (id in all.gradient) {
-      def = all.gradient[id];
-      stops = def.stops;
-
-      if (def.gradient === 'radial') {
-        // SVG radial gradients automatically transform to normalized bbox
-        // coordinates, in a way that is cumbersome to replicate in canvas.
-        // So we wrap the radial gradient in a pattern element, allowing us
-        // to mantain a circular gradient that matches what canvas provides.
-
-        defs += openTag(tag = 'pattern', {
-          id: patternPrefix + id,
-          viewBox: '0,0,1,1',
-          width: '100%',
-          height: '100%',
-          preserveAspectRatio: 'xMidYMid slice'
-        });
-
-        defs += openTag('rect', {
-          width: '1',
-          height: '1',
-          fill: 'url(#' + id + ')'
-        }) + closeTag('rect');
-
-        defs += closeTag(tag);
-
-        defs += openTag(tag = 'radialGradient', {
-          id: id,
-          fx: def.x1,
-          fy: def.y1,
-          fr: def.r1,
-          cx: def.x2,
-          cy: def.y2,
-          r: def.r2
-        });
-      } else {
-        defs += openTag(tag = 'linearGradient', {
-          id: id,
-          x1: def.x1,
-          x2: def.x2,
-          y1: def.y1,
-          y2: def.y2
-        });
-      }
-
-      for (i = 0; i < stops.length; ++i) {
-        defs += openTag('stop', {
-          offset: stops[i].offset,
-          'stop-color': stops[i].color
-        }) + closeTag('stop');
-      }
-
-      defs += closeTag(tag);
-    }
-
-    for (id in all.clipping) {
-      def = all.clipping[id];
-
-      defs += openTag('clipPath', { id: id });
-
-      if (def.path) {
-        defs += openTag('path', {
-          d: def.path
-        }) + closeTag('path');
-      } else {
-        defs += openTag('rect', {
-          x: 0,
-          y: 0,
-          width: def.width,
-          height: def.height
-        }) + closeTag('rect');
-      }
-
-      defs += closeTag('clipPath');
-    }
-
-    return (defs.length > 0) ? openTag('defs') + defs + closeTag('defs') : '';
-  };
-
-  var object$1;
-
-  function emit$1(name, value, ns, prefixed) {
-    object$1[prefixed || name] = value;
+    return expr;
   }
 
-  prototype$M.attributes = function (attr, item) {
-    object$1 = {};
-    attr(emit$1, item, this);
-    return object$1;
-  };
+  // 11.2 Left-Hand-Side Expressions
 
-  prototype$M.href = function (item) {
-    var that = this,
-      href = item.href,
-      attr;
+  function parseArguments() {
+    var args = [];
 
-    if (href) {
-      if (attr = that._hrefs && that._hrefs[href]) {
-        return attr;
-      } else {
-        that.sanitizeURL(href).then(function (attr) {
-          // rewrite to use xlink namespace
-          // note that this will be deprecated in SVG 2.0
-          attr['xlink:href'] = attr.href;
-          attr.href = null;
-          (that._hrefs || (that._hrefs = {}))[href] = attr;
-        });
-      }
-    }
-    return null;
-  };
+    expect('(');
 
-  prototype$M.mark = function (scene) {
-    var renderer = this,
-      mdef = Marks[scene.marktype],
-      tag = mdef.tag,
-      defs = this._defs,
-      str = '',
-      style;
-
-    if (tag !== 'g' && scene.interactive === false) {
-      style = 'style="pointer-events: none;"';
-    }
-
-    // render opening group tag
-    str += openTag('g', {
-      'class': cssClass(scene),
-      'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null
-    }, style);
-    if (scene.role == 'axis' || scene.role == 'legend') {
-      debugger;
-    }
-
-    // render contained elements
-    function process(item) {
-      var href = renderer.href(item);
-      if (href) str += openTag('a', href);
-
-      style = (tag !== 'g') ? applyStyles(item, scene, tag, defs) : null;
-      str += openTag(tag, renderer.attributes(mdef.attr, item), style);
-
-      if (tag === 'text') {
-        str += escape_text(textValue(item));
-      } else if (tag === 'g') {
-        str += openTag('path', renderer.attributes(mdef.background, item),
-          applyStyles(item, scene, 'bgrect', defs)) + closeTag('path');
-
-        str += openTag('g', renderer.attributes(mdef.foreground, item))
-          + renderer.markGroup(item)
-          + closeTag('g');
-      }
-
-      str += closeTag(tag);
-      if (href) str += closeTag('a');
-    }
-
-    if (mdef.nested) {
-      if (scene.items && scene.items.length) process(scene.items[0]);
-    } else {
-      visit(scene, process);
-    }
-
-    // render closing group tag
-    return str + closeTag('g');
-  };
-
-  prototype$M.markGroup = function (scene) {
-    var renderer = this,
-      str = '';
-
-    visit(scene, function (item) {
-      str += renderer.mark(item);
-    });
-
-    return str;
-  };
-
-  function applyStyles(o, mark, tag, defs) {
-    if (o == null) return '';
-    var i, n, prop, name, value, s = '';
-
-    if (tag === 'bgrect' && mark.interactive === false) {
-      s += 'pointer-events: none; ';
-    }
-
-    if (tag === 'text') {
-      s += 'font-family: ' + fontFamily(o) + '; ';
-      s += 'font-size: ' + fontSize(o) + 'px; ';
-      if (o.fontStyle) s += 'font-style: ' + o.fontStyle + '; ';
-      if (o.fontVariant) s += 'font-variant: ' + o.fontVariant + '; ';
-      if (o.fontWeight) s += 'font-weight: ' + o.fontWeight + '; ';
-    }
-
-    for (i = 0, n = styleProperties.length; i < n; ++i) {
-      prop = styleProperties[i];
-      name = styles[prop];
-      value = o[prop];
-
-      if (value == null) {
-        if (name === 'fill') {
-          s += 'fill: none; ';
+    if (!match(')')) {
+      while (index < length) {
+        args.push(parseConditionalExpression());
+        if (match(')')) {
+          break;
         }
-      } else if (value === 'transparent' && (name === 'fill' || name === 'stroke')) {
-        // transparent is not a legal SVG value, so map to none instead
-        s += name + ': none; ';
+        expect(',');
+      }
+    }
+
+    expect(')');
+
+    return args;
+  }
+
+  function parseNonComputedProperty() {
+    var token;
+    index = lookahead.start;
+    token = lex();
+
+    if (!isIdentifierName(token)) {
+      throwUnexpected(token);
+    }
+
+    return finishIdentifier(token.value);
+  }
+
+  function parseNonComputedMember() {
+    expect('.');
+
+    return parseNonComputedProperty();
+  }
+
+  function parseComputedMember() {
+    var expr;
+
+    expect('[');
+
+    expr = parseExpression();
+
+    expect(']');
+
+    return expr;
+  }
+
+  function parseLeftHandSideExpressionAllowCall() {
+    var expr, args, property;
+
+    expr = parsePrimaryExpression();
+
+    for (;;) {
+      if (match('.')) {
+        property = parseNonComputedMember();
+        expr = finishMemberExpression('.', expr, property);
+      } else if (match('(')) {
+        args = parseArguments();
+        expr = finishCallExpression(expr, args);
+      } else if (match('[')) {
+        property = parseComputedMember();
+        expr = finishMemberExpression('[', expr, property);
       } else {
-        if (isGradient(value)) {
-          value = gradientRef(value, defs.gradient, '');
-        }
-        s += name + ': ' + value + '; ';
-      }
-    }
-
-    return s ? 'style="' + s.trim() + '"' : null;
-  }
-
-  function escape_text(s) {
-    return s.replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }
-
-  var Canvas = 'canvas';
-  var PNG = 'png';
-  var SVG = 'svg';
-  var None$2 = 'none';
-
-  var RenderType = {
-    Canvas: Canvas,
-    PNG:    PNG,
-    SVG:    SVG,
-    None:   None$2
-  };
-
-  var modules = {};
-
-  modules[Canvas] = modules[PNG] = {
-    renderer: CanvasRenderer,
-    headless: CanvasRenderer,
-    handler:  CanvasHandler
-  };
-
-  modules[SVG] = {
-    renderer: SVGRenderer,
-    headless: SVGStringRenderer,
-    handler:  SVGHandler
-  };
-
-  modules[None$2] = {};
-
-  function renderModule(name, _) {
-    name = String(name || '').toLowerCase();
-    if (arguments.length > 1) {
-      modules[name] = _;
-      return this;
-    } else {
-      return modules[name];
-    }
-  }
-
-  function intersect$1(scene, bounds, filter) {
-    const hits = [], // intersection results
-          box = new Bounds().union(bounds), // defensive copy
-          type = scene.marktype;
-
-    return type ? intersectMark(scene, box, filter, hits)
-      : type === 'group' ? intersectGroup(scene, box, filter, hits)
-      : error('Intersect scene must be mark node or group item.');
-  }
-
-  function intersectMark(mark, box, filter, hits) {
-    if (visitMark(mark, box, filter)) {
-      const items = mark.items,
-            type = mark.marktype,
-            n = items.length;
-
-      let i = 0;
-
-      if (type === 'group') {
-        for (; i<n; ++i) {
-          intersectGroup(items[i], box, filter, hits);
-        }
-      } else {
-        for (const test = Marks[type].isect; i<n; ++i) {
-          let item = items[i];
-          if (intersectItem(item, box, test)) hits.push(item);
-        }
-      }
-    }
-    return hits;
-  }
-
-  function visitMark(mark, box, filter) {
-    // process if bounds intersect and if
-    // (1) mark is a group mark (so we must recurse), or
-    // (2) mark is interactive and passes filter
-    return mark.bounds && box.intersects(mark.bounds) && (
-      mark.marktype === 'group' ||
-      mark.interactive !== false && (!filter || filter(mark))
-    );
-  }
-
-  function intersectGroup(group, box, filter, hits) {
-    // test intersect against group
-    // skip groups by default unless filter says otherwise
-    if ((filter && filter(group.mark)) &&
-        intersectItem(group, box, Marks.group.isect)) {
-      hits.push(group);
-    }
-
-    // recursively test children marks
-    // translate box to group coordinate space
-    const marks = group.items,
-          n = marks && marks.length;
-
-    if (n) {
-      const x = group.x || 0,
-            y = group.y || 0;
-      box.translate(-x, -y);
-      for (let i=0; i<n; ++i) {
-        intersectMark(marks[i], box, filter, hits);
-      }
-      box.translate(x, y);
-    }
-
-    return hits;
-  }
-
-  function intersectItem(item, box, test) {
-    // test bounds enclosure, bounds intersection, then detailed test
-    const bounds = item.bounds;
-    return box.encloses(bounds) || (box.intersects(bounds) && test(item, box));
-  }
-
-  var clipBounds = new Bounds();
-
-  function boundClip(mark) {
-    var clip = mark.clip;
-
-    if (isFunction(clip)) {
-      clip(context(clipBounds.clear()));
-    } else if (clip) {
-      clipBounds.set(0, 0, mark.group.width, mark.group.height);
-    } else return;
-
-    mark.bounds.intersect(clipBounds);
-  }
-
-  var TOLERANCE = 1e-9;
-
-  function sceneEqual(a, b, key) {
-    return (a === b) ? true
-      : (key === 'path') ? pathEqual(a, b)
-      : (a instanceof Date && b instanceof Date) ? +a === +b
-      : (isNumber(a) && isNumber(b)) ? Math.abs(a - b) <= TOLERANCE
-      : (!a || !b || !isObject(a) && !isObject(b)) ? a == b
-      : (a == null || b == null) ? false
-      : objectEqual(a, b);
-  }
-
-  function pathEqual(a, b) {
-    return sceneEqual(pathParse(a), pathParse(b));
-  }
-
-  function objectEqual(a, b) {
-    var ka = Object.keys(a),
-        kb = Object.keys(b),
-        key, i;
-
-    if (ka.length !== kb.length) return false;
-
-    ka.sort();
-    kb.sort();
-
-    for (i = ka.length - 1; i >= 0; i--) {
-      if (ka[i] != kb[i]) return false;
-    }
-
-    for (i = ka.length - 1; i >= 0; i--) {
-      key = ka[i];
-      if (!sceneEqual(a[key], b[key], key)) return false;
-    }
-
-    return typeof a === typeof b;
-  }
-
-  /**
-   * Calculate bounding boxes for scenegraph items.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {object} params.mark - The scenegraph mark instance to bound.
-   */
-  function Bound(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$N = inherits(Bound, Transform);
-
-  prototype$N.transform = function(_, pulse) {
-    var view = pulse.dataflow,
-        mark = _.mark,
-        type = mark.marktype,
-        entry = Marks[type],
-        bound = entry.bound,
-        markBounds = mark.bounds, rebound;
-
-    if (entry.nested) {
-      // multi-item marks have a single bounds instance
-      if (mark.items.length) view.dirty(mark.items[0]);
-      markBounds = boundItem$1(mark, bound);
-      mark.items.forEach(function(item) {
-        item.bounds.clear().union(markBounds);
-      });
-    }
-
-    else if (type === Group || _.modified()) {
-      // operator parameters modified -> re-bound all items
-      // updates group bounds in response to modified group content
-      pulse.visit(pulse.MOD, function(item) { view.dirty(item); });
-      markBounds.clear();
-      mark.items.forEach(function(item) {
-        markBounds.union(boundItem$1(item, bound));
-      });
-
-      // force reflow for legends to propagate any layout changes
-      // suppress other types to prevent overall layout jumpiness
-      if (mark.role === LegendRole) pulse.reflow();
-    }
-
-    else {
-      // incrementally update bounds, re-bound mark as needed
-      rebound = pulse.changed(pulse.REM);
-
-      pulse.visit(pulse.ADD, function(item) {
-        markBounds.union(boundItem$1(item, bound));
-      });
-
-      pulse.visit(pulse.MOD, function(item) {
-        rebound = rebound || markBounds.alignsWith(item.bounds);
-        view.dirty(item);
-        markBounds.union(boundItem$1(item, bound));
-      });
-
-      if (rebound) {
-        markBounds.clear();
-        mark.items.forEach(function(item) { markBounds.union(item.bounds); });
-      }
-    }
-
-    // ensure mark bounds do not exceed any clipping region
-    boundClip(mark);
-
-    return pulse.modifies('bounds');
-  };
-
-  function boundItem$1(item, bound, opt) {
-    return bound(item.bounds.clear(), item, opt);
-  }
-
-  var COUNTER_NAME = ':vega_identifier:';
-
-  /**
-   * Adds a unique identifier to all added tuples.
-   * This transform creates a new signal that serves as an id counter.
-   * As a result, the id counter is shared across all instances of this
-   * transform, generating unique ids across multiple data streams. In
-   * addition, this signal value can be included in a snapshot of the
-   * dataflow state, enabling correct resumption of id allocation.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {string} params.as - The field name for the generated identifier.
-   */
-  function Identifier(params) {
-    Transform.call(this, 0, params);
-  }
-
-  Identifier.Definition = {
-    "type": "Identifier",
-    "metadata": {"modifies": true},
-    "params": [
-      { "name": "as", "type": "string", "required": true }
-    ]
-  };
-
-  var prototype$O = inherits(Identifier, Transform);
-
-  prototype$O.transform = function(_, pulse) {
-    var counter = getCounter(pulse.dataflow),
-        id = counter.value,
-        as = _.as;
-
-    pulse.visit(pulse.ADD, function(t) {
-      if (!t[as]) t[as] = ++id;
-    });
-
-    counter.set(this.value = id);
-    return pulse;
-  };
-
-  function getCounter(view) {
-    var counter = view._signals[COUNTER_NAME];
-    if (!counter) {
-      view._signals[COUNTER_NAME] = (counter = view.add(0));
-    }
-    return counter;
-  }
-
-  /**
-   * Bind scenegraph items to a scenegraph mark instance.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {object} params.markdef - The mark definition for creating the mark.
-   *   This is an object of legal scenegraph mark properties which *must* include
-   *   the 'marktype' property.
-   */
-  function Mark(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$P = inherits(Mark, Transform);
-
-  prototype$P.transform = function(_, pulse) {
-    var mark = this.value;
-
-    // acquire mark on first invocation, bind context and group
-    if (!mark) {
-      mark = pulse.dataflow.scenegraph().mark(_.markdef, lookup$1(_), _.index);
-      mark.group.context = _.context;
-      if (!_.context.group) _.context.group = mark.group;
-      mark.source = this;
-      mark.clip = _.clip;
-      mark.interactive = _.interactive;
-      this.value = mark;
-    }
-
-    // initialize entering items
-    var Init = mark.marktype === Group ? GroupItem : Item;
-    pulse.visit(pulse.ADD, function(item) { Init.call(item, mark); });
-
-    // update clipping and/or interactive status
-    if (_.modified('clip') || _.modified('interactive')) {
-      mark.clip = _.clip;
-      mark.interactive = !!_.interactive;
-      mark.zdirty = true; // force scenegraph re-eval
-      pulse.reflow();
-    }
-
-    // bind items array to scenegraph mark
-    mark.items = pulse.source;
-    return pulse;
-  };
-
-  function lookup$1(_) {
-    var g = _.groups, p = _.parent;
-    return g && g.size === 1 ? g.get(Object.keys(g.object)[0])
-      : g && p ? g.lookup(p)
-      : null;
-  }
-
-  /**
-   * Analyze items for overlap, changing opacity to hide items with
-   * overlapping bounding boxes. This transform will preserve at least
-   * two items (e.g., first and last) even if overlap persists.
-   * @param {object} params - The parameters for this operator.
-   * @param {function(*,*): number} [params.sort] - A comparator
-   *   function for sorting items.
-   * @param {object} [params.method] - The overlap removal method to apply.
-   *   One of 'parity' (default, hide every other item until there is no
-   *   more overlap) or 'greedy' (sequentially scan and hide and items that
-   *   overlap with the last visible item).
-   * @param {object} [params.boundScale] - A scale whose range should be used
-   *   to bound the items. Items exceeding the bounds of the scale range
-   *   will be treated as overlapping. If null or undefined, no bounds check
-   *   will be applied.
-   * @param {object} [params.boundOrient] - The orientation of the scale
-   *   (top, bottom, left, or right) used to bound items. This parameter is
-   *   ignored if boundScale is null or undefined.
-   * @param {object} [params.boundTolerance] - The tolerance in pixels for
-   *   bound inclusion testing (default 1). This specifies by how many pixels
-   *   an item's bounds may exceed the scale range bounds and not be culled.
-   * @constructor
-   */
-  function Overlap(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$Q = inherits(Overlap, Transform);
-
-  var methods = {
-    parity: function(items) {
-      return items.filter((item, i) => i % 2 ? (item.opacity = 0) : 1);
-    },
-    greedy: function(items, sep) {
-      var a;
-      return items.filter((b, i) => {
-        if (!i || !intersect$2(a.bounds, b.bounds, sep)) {
-          a = b;
-          return 1;
-        } else {
-          return b.opacity = 0;
-        }
-      });
-    }
-  };
-
-  // compute bounding box intersection
-  // including padding pixels of separation
-  function intersect$2(a, b, sep) {
-    return sep > Math.max(
-      b.x1 - a.x2,
-      a.x1 - b.x2,
-      b.y1 - a.y2,
-      a.y1 - b.y2
-    );
-  }
-
-  function hasOverlap(items, pad) {
-    for (var i=1, n=items.length, a=items[0].bounds, b; i<n; a=b, ++i) {
-      if (intersect$2(a, b = items[i].bounds, pad)) return true;
-    }
-  }
-
-  function hasBounds(item) {
-    var b = item.bounds;
-    return b.width() > 1 && b.height() > 1;
-  }
-
-  function boundTest(scale, orient, tolerance) {
-    var range = scale.range(),
-        b = new Bounds();
-
-    if (orient === Top || orient === Bottom) {
-      b.set(range[0], -Infinity, range[1], +Infinity);
-    } else {
-      b.set(-Infinity, range[0], +Infinity, range[1]);
-    }
-    b.expand(tolerance || 1);
-
-    return item => b.encloses(item.bounds);
-  }
-
-  // reset all items to be fully opaque
-  function reset$1(source) {
-    source.forEach(item => item.opacity = 1);
-    return source;
-  }
-
-  // add all tuples to mod, fork pulse if parameters were modified
-  // fork prevents cross-stream tuple pollution (e.g., pulse from scale)
-  function reflow(pulse, _) {
-    return pulse.reflow(_.modified()).modifies('opacity');
-  }
-
-  prototype$Q.transform = function(_, pulse) {
-    var reduce = methods[_.method] || methods.parity,
-        source = pulse.materialize(pulse.SOURCE).source,
-        sep = _.separation || 0,
-        items, test, bounds;
-
-    if (!source || !source.length) return;
-
-    if (!_.method) {
-      // early exit if method is falsy
-      if (_.modified('method')) {
-        reset$1(source);
-        pulse = reflow(pulse, _);
-      }
-      return pulse;
-    }
-
-    if (_.sort) {
-      source = source.slice().sort(_.sort);
-    }
-
-    // skip labels with no content
-    source = source.filter(hasBounds);
-
-    items = reset$1(source);
-    pulse = reflow(pulse, _);
-
-    if (items.length >= 3 && hasOverlap(items, sep)) {
-      do {
-        items = reduce(items, sep);
-      } while (items.length >= 3 && hasOverlap(items, sep));
-
-      if (items.length < 3 && !peek(source).opacity) {
-        if (items.length > 1) peek(items).opacity = 0;
-        peek(source).opacity = 1;
-      }
-    }
-
-    if (_.boundScale && _.boundTolerance >= 0) {
-      test = boundTest(_.boundScale, _.boundOrient, +_.boundTolerance);
-      source.forEach(item => {
-        if (!test(item)) item.opacity = 0;
-      });
-    }
-
-    // re-calculate mark bounds
-    bounds = items[0].mark.bounds.clear();
-    source.forEach(item => {
-      if (item.opacity) bounds.union(item.bounds);
-    });
-
-    return pulse;
-  };
-
-  /**
-   * Queue modified scenegraph items for rendering.
-   * @constructor
-   */
-  function Render(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$R = inherits(Render, Transform);
-
-  prototype$R.transform = function(_, pulse) {
-    var view = pulse.dataflow;
-
-    pulse.visit(pulse.ALL, function(item) { view.dirty(item); });
-
-    // set z-index dirty flag as needed
-    if (pulse.fields && pulse.fields['zindex']) {
-      var item = pulse.source && pulse.source[0];
-      if (item) item.mark.zdirty = true;
-    }
-  };
-
-  const tempBounds$2 = new Bounds();
-
-  function set(item, property, value) {
-    return item[property] === value ? 0
-      : (item[property] = value, 1);
-  }
-
-  const AxisOffset = 0.5;
-
-  function isYAxis(mark) {
-    var orient = mark.items[0].datum.orient;
-    return orient === Left || orient === Right;
-  }
-
-  function axisIndices(datum) {
-    var index = +datum.grid;
-    return [
-      datum.ticks  ? index++ : -1, // ticks index
-      datum.labels ? index++ : -1, // labels index
-      index + (+datum.domain)      // title index
-    ];
-  }
-
-  function axisLayout(view, axis, width, height) {
-    var item = axis.items[0],
-        datum = item.datum,
-        orient = datum.orient,
-        indices = axisIndices(datum),
-        range = item.range,
-        offset = item.offset,
-        position = item.position,
-        minExtent = item.minExtent,
-        maxExtent = item.maxExtent,
-        title = datum.title && item.items[indices[2]].items[0],
-        titlePadding = item.titlePadding,
-        bounds = item.bounds,
-        x = 0, y = 0, i, s;
-
-    tempBounds$2.clear().union(bounds);
-    bounds.clear();
-    if ((i=indices[0]) > -1) bounds.union(item.items[i].bounds);
-    if ((i=indices[1]) > -1) bounds.union(item.items[i].bounds);
-
-    // position axis group and title
-    switch (orient) {
-      case Top:
-        x = position || 0;
-        y = -offset;
-        s = Math.max(minExtent, Math.min(maxExtent, -bounds.y1));
-        if (title) s = axisTitleLayout(title, s, titlePadding, 0, -1, bounds);
-        bounds.add(0, -s).add(range, 0);
         break;
-      case Left:
-        x = -offset;
-        y = position || 0;
-        s = Math.max(minExtent, Math.min(maxExtent, -bounds.x1));
-        if (title) s = axisTitleLayout(title, s, titlePadding, 1, -1, bounds);
-        bounds.add(-s, 0).add(0, range);
+      }
+    }
+
+    return expr;
+  }
+
+  // 11.3 Postfix Expressions
+
+  function parsePostfixExpression() {
+    var expr = parseLeftHandSideExpressionAllowCall();
+
+    if (lookahead.type === TokenPunctuator) {
+      if ((match('++') || match('--'))) {
+        throw new Error(DISABLED);
+      }
+    }
+
+    return expr;
+  }
+
+  // 11.4 Unary Operators
+
+  function parseUnaryExpression() {
+    var token, expr;
+
+    if (lookahead.type !== TokenPunctuator && lookahead.type !== TokenKeyword) {
+      expr = parsePostfixExpression();
+    } else if (match('++') || match('--')) {
+      throw new Error(DISABLED);
+    } else if (match('+') || match('-') || match('~') || match('!')) {
+      token = lex();
+      expr = parseUnaryExpression();
+      expr = finishUnaryExpression(token.value, expr);
+    } else if (matchKeyword('delete') || matchKeyword('void') || matchKeyword('typeof')) {
+      throw new Error(DISABLED);
+    } else {
+      expr = parsePostfixExpression();
+    }
+
+    return expr;
+  }
+
+  function binaryPrecedence(token) {
+    var prec = 0;
+
+    if (token.type !== TokenPunctuator && token.type !== TokenKeyword) {
+      return 0;
+    }
+
+    switch (token.value) {
+      case '||':
+        prec = 1;
         break;
-      case Right:
-        x = width + offset;
-        y = position || 0;
-        s = Math.max(minExtent, Math.min(maxExtent, bounds.x2));
-        if (title) s = axisTitleLayout(title, s, titlePadding, 1, 1, bounds);
-        bounds.add(0, 0).add(s, range);
+
+      case '&&':
+        prec = 2;
         break;
-      case Bottom:
-        x = position || 0;
-        y = height + offset;
-        s = Math.max(minExtent, Math.min(maxExtent, bounds.y2));
-        if (title) s = axisTitleLayout(title, s, titlePadding, 0, 1, bounds);
-        bounds.add(0, 0).add(range, s);
+
+      case '|':
+        prec = 3;
         break;
+
+      case '^':
+        prec = 4;
+        break;
+
+      case '&':
+        prec = 5;
+        break;
+
+      case '==':
+      case '!=':
+      case '===':
+      case '!==':
+        prec = 6;
+        break;
+
+      case '<':
+      case '>':
+      case '<=':
+      case '>=':
+      case 'instanceof':
+      case 'in':
+        prec = 7;
+        break;
+
+      case '<<':
+      case '>>':
+      case '>>>':
+        prec = 8;
+        break;
+
+      case '+':
+      case '-':
+        prec = 9;
+        break;
+
+      case '*':
+      case '/':
+      case '%':
+        prec = 11;
+        break;
+
       default:
-        x = item.x;
-        y = item.y;
-    }
-
-    // update bounds
-    boundStroke(bounds.translate(x, y), item);
-
-    if (set(item, 'x', x + AxisOffset) | set(item, 'y', y + AxisOffset)) {
-      item.bounds = tempBounds$2;
-      view.dirty(item);
-      item.bounds = bounds;
-      view.dirty(item);
-    }
-
-    return item.mark.bounds.clear().union(bounds);
-  }
-
-  function axisTitleLayout(title, offset, pad, isYAxis, sign, bounds) {
-    var b = title.bounds, dx = 0, dy = 0;
-
-    if (title.auto) {
-      offset += pad;
-
-      isYAxis
-        ? dx = (title.x || 0) - (title.x = sign * offset)
-        : dy = (title.y || 0) - (title.y = sign * offset);
-
-      b.translate(-dx, -dy);
-      title.mark.bounds.set(b.x1, b.y1, b.x2, b.y2);
-
-      if (isYAxis) {
-        bounds.add(0, b.y1).add(0, b.y2);
-        offset += b.width();
-      } else {
-        bounds.add(b.x1, 0).add(b.x2, 0);
-        offset += b.height();
-      }
-    } else {
-      bounds.union(b);
-    }
-
-    return offset;
-  }
-
-  function gridLayoutGroups(group) {
-    var groups = group.items,
-        n = groups.length,
-        i = 0, mark, items;
-
-    var views = {
-      marks:      [],
-      rowheaders: [],
-      rowfooters: [],
-      colheaders: [],
-      colfooters: [],
-      rowtitle: null,
-      coltitle: null
-    };
-
-    // layout axes, gather legends, collect bounds
-    for (; i<n; ++i) {
-      mark = groups[i];
-      items = mark.items;
-      if (mark.marktype === Group) {
-        switch (mark.role) {
-          case AxisRole:
-          case LegendRole:
-            break;
-          case RowHeader: views.rowheaders.push(...items); break;
-          case RowFooter: views.rowfooters.push(...items); break;
-          case ColHeader: views.colheaders.push(...items); break;
-          case ColFooter: views.colfooters.push(...items); break;
-          case RowTitle:  views.rowtitle = items[0]; break;
-          case ColTitle:  views.coltitle = items[0]; break;
-          default:        views.marks.push(...items);
-        }
-      }
-    }
-
-    return views;
-  }
-
-  function bboxFlush(item) {
-    return new Bounds().set(0, 0, item.width || 0, item.height || 0);
-  }
-
-  function bboxFull(item) {
-    var b = item.bounds.clone();
-    return b.empty()
-      ? b.set(0, 0, 0, 0)
-      : b.translate(-(item.x || 0), -(item.y || 0));
-  }
-
-  function get$2(opt, key, d) {
-    var v = isObject(opt) ? opt[key] : opt;
-    return v != null ? v : (d !== undefined ? d : 0);
-  }
-
-  function offsetValue(v) {
-    return v < 0 ? Math.ceil(-v) : 0;
-  }
-
-  function gridLayout(view, groups, opt) {
-    var dirty = !opt.nodirty,
-        bbox = opt.bounds === Flush ? bboxFlush : bboxFull,
-        bounds = tempBounds$2.set(0, 0, 0, 0),
-        alignCol = get$2(opt.align, Column),
-        alignRow = get$2(opt.align, Row),
-        padCol = get$2(opt.padding, Column),
-        padRow = get$2(opt.padding, Row),
-        ncols = opt.columns || groups.length,
-        nrows = ncols < 0 ? 1 : Math.ceil(groups.length / ncols),
-        n = groups.length,
-        xOffset = Array(n), xExtent = Array(ncols), xMax = 0,
-        yOffset = Array(n), yExtent = Array(nrows), yMax = 0,
-        dx = Array(n), dy = Array(n), boxes = Array(n),
-        m, i, c, r, b, g, px, py, x, y, offset;
-
-    for (i=0; i<ncols; ++i) xExtent[i] = 0;
-    for (i=0; i<nrows; ++i) yExtent[i] = 0;
-
-    // determine offsets for each group
-    for (i=0; i<n; ++i) {
-      g = groups[i];
-      b = boxes[i] = bbox(g);
-      g.x = g.x || 0; dx[i] = 0;
-      g.y = g.y || 0; dy[i] = 0;
-      c = i % ncols;
-      r = ~~(i / ncols);
-      xMax = Math.max(xMax, px = Math.ceil(b.x2));
-      yMax = Math.max(yMax, py = Math.ceil(b.y2));
-      xExtent[c] = Math.max(xExtent[c], px);
-      yExtent[r] = Math.max(yExtent[r], py);
-      xOffset[i] = padCol + offsetValue(b.x1);
-      yOffset[i] = padRow + offsetValue(b.y1);
-      if (dirty) view.dirty(groups[i]);
-    }
-
-    // set initial alignment offsets
-    for (i=0; i<n; ++i) {
-      if (i % ncols === 0) xOffset[i] = 0;
-      if (i < ncols) yOffset[i] = 0;
-    }
-
-    // enforce column alignment constraints
-    if (alignCol === Each) {
-      for (c=1; c<ncols; ++c) {
-        for (offset=0, i=c; i<n; i += ncols) {
-          if (offset < xOffset[i]) offset = xOffset[i];
-        }
-        for (i=c; i<n; i += ncols) {
-          xOffset[i] = offset + xExtent[c-1];
-        }
-      }
-    } else if (alignCol === All) {
-      for (offset=0, i=0; i<n; ++i) {
-        if (i % ncols && offset < xOffset[i]) offset = xOffset[i];
-      }
-      for (i=0; i<n; ++i) {
-        if (i % ncols) xOffset[i] = offset + xMax;
-      }
-    } else {
-      for (alignCol=false, c=1; c<ncols; ++c) {
-        for (i=c; i<n; i += ncols) {
-          xOffset[i] += xExtent[c-1];
-        }
-      }
-    }
-
-    // enforce row alignment constraints
-    if (alignRow === Each) {
-      for (r=1; r<nrows; ++r) {
-        for (offset=0, i=r*ncols, m=i+ncols; i<m; ++i) {
-          if (offset < yOffset[i]) offset = yOffset[i];
-        }
-        for (i=r*ncols; i<m; ++i) {
-          yOffset[i] = offset + yExtent[r-1];
-        }
-      }
-    } else if (alignRow === All) {
-      for (offset=0, i=ncols; i<n; ++i) {
-        if (offset < yOffset[i]) offset = yOffset[i];
-      }
-      for (i=ncols; i<n; ++i) {
-        yOffset[i] = offset + yMax;
-      }
-    } else {
-      for (alignRow=false, r=1; r<nrows; ++r) {
-        for (i=r*ncols, m=i+ncols; i<m; ++i) {
-          yOffset[i] += yExtent[r-1];
-        }
-      }
-    }
-
-    // perform horizontal grid layout
-    for (x=0, i=0; i<n; ++i) {
-      x = xOffset[i] + (i % ncols ? x : 0);
-      dx[i] += x - groups[i].x;
-    }
-
-    // perform vertical grid layout
-    for (c=0; c<ncols; ++c) {
-      for (y=0, i=c; i<n; i += ncols) {
-        y += yOffset[i];
-        dy[i] += y - groups[i].y;
-      }
-    }
-
-    // perform horizontal centering
-    if (alignCol && get$2(opt.center, Column) && nrows > 1) {
-      for (i=0; i<n; ++i) {
-        b = alignCol === All ? xMax : xExtent[i % ncols];
-        x = b - boxes[i].x2 - groups[i].x - dx[i];
-        if (x > 0) dx[i] += x / 2;
-      }
-    }
-
-    // perform vertical centering
-    if (alignRow && get$2(opt.center, Row) && ncols !== 1) {
-      for (i=0; i<n; ++i) {
-        b = alignRow === All ? yMax : yExtent[~~(i / ncols)];
-        y = b - boxes[i].y2 - groups[i].y - dy[i];
-        if (y > 0) dy[i] += y / 2;
-      }
-    }
-
-    // position grid relative to anchor
-    for (i=0; i<n; ++i) {
-      bounds.union(boxes[i].translate(dx[i], dy[i]));
-    }
-    x = get$2(opt.anchor, X);
-    y = get$2(opt.anchor, Y);
-    switch (get$2(opt.anchor, Column)) {
-      case End:    x -= bounds.width(); break;
-      case Middle: x -= bounds.width() / 2;
-    }
-    switch (get$2(opt.anchor, Row)) {
-      case End:    y -= bounds.height(); break;
-      case Middle: y -= bounds.height() / 2;
-    }
-    x = Math.round(x);
-    y = Math.round(y);
-
-    // update mark positions, bounds, dirty
-    bounds.clear();
-    for (i=0; i<n; ++i) {
-      groups[i].mark.bounds.clear();
-    }
-    for (i=0; i<n; ++i) {
-      g = groups[i];
-      g.x += (dx[i] += x);
-      g.y += (dy[i] += y);
-      bounds.union(g.mark.bounds.union(g.bounds.translate(dx[i], dy[i])));
-      if (dirty) view.dirty(g);
-    }
-
-    return bounds;
-  }
-
-  function trellisLayout(view, group, opt) {
-    var views = gridLayoutGroups(group),
-        groups = views.marks,
-        bbox = opt.bounds === Flush ? boundFlush : boundFull,
-        off = opt.offset,
-        ncols = opt.columns || groups.length,
-        nrows = ncols < 0 ? 1 : Math.ceil(groups.length / ncols),
-        cells = nrows * ncols,
-        x, y, x2, y2, anchor, band, offset;
-
-    // -- initial grid layout
-    const bounds = gridLayout(view, groups, opt);
-
-    // -- layout grid headers and footers --
-
-    // perform row header layout
-    if (views.rowheaders) {
-      band = get$2(opt.headerBand, Row, null);
-      x = layoutHeaders(view, views.rowheaders, groups, ncols, nrows, -get$2(off, 'rowHeader'), min$2, 0, bbox, 'x1', 0, ncols, 1, band);
-    }
-
-    // perform column header layout
-    if (views.colheaders) {
-      band = get$2(opt.headerBand, Column, null);
-      y = layoutHeaders(view, views.colheaders, groups, ncols, ncols, -get$2(off, 'columnHeader'), min$2, 1, bbox, 'y1', 0, 1, ncols, band);
-    }
-
-    // perform row footer layout
-    if (views.rowfooters) {
-      band = get$2(opt.footerBand, Row, null);
-      x2 = layoutHeaders(view, views.rowfooters, groups, ncols, nrows,  get$2(off, 'rowFooter'), max$2, 0, bbox, 'x2', ncols-1, ncols, 1, band);
-    }
-
-    // perform column footer layout
-    if (views.colfooters) {
-      band = get$2(opt.footerBand, Column, null);
-      y2 = layoutHeaders(view, views.colfooters, groups, ncols, ncols,  get$2(off, 'columnFooter'), max$2, 1, bbox, 'y2', cells-ncols, 1, ncols, band);
-    }
-
-    // perform row title layout
-    if (views.rowtitle) {
-      anchor = get$2(opt.titleAnchor, Row);
-      offset = get$2(off, 'rowTitle');
-      offset = anchor === End ? x2 + offset : x - offset;
-      band = get$2(opt.titleBand, Row, 0.5);
-      layoutTitle(view, views.rowtitle, offset, 0, bounds, band);
-    }
-
-    // perform column title layout
-    if (views.coltitle) {
-      anchor = get$2(opt.titleAnchor, Column);
-      offset = get$2(off, 'columnTitle');
-      offset = anchor === End ? y2 + offset : y - offset;
-      band = get$2(opt.titleBand, Column, 0.5);
-      layoutTitle(view, views.coltitle, offset, 1, bounds, band);
-    }
-  }
-
-  function boundFlush(item, field) {
-    return field === 'x1' ? (item.x || 0)
-      : field === 'y1' ? (item.y || 0)
-      : field === 'x2' ? (item.x || 0) + (item.width || 0)
-      : field === 'y2' ? (item.y || 0) + (item.height || 0)
-      : undefined;
-  }
-
-  function boundFull(item, field) {
-    return item.bounds[field];
-  }
-
-  // aggregation functions for grid margin determination
-  function min$2(a, b) { return Math.floor(Math.min(a, b)); }
-  function max$2(a, b) { return Math.ceil(Math.max(a, b)); }
-
-  function layoutHeaders(view, headers, groups, ncols, limit, offset, agg, isX, bound, bf, start, stride, back, band) {
-    var n = groups.length,
-        init = 0,
-        edge = 0,
-        i, j, k, m, b, h, g, x, y;
-
-    // if no groups, early exit and return 0
-    if (!n) return init;
-
-    // compute margin
-    for (i=start; i<n; i+=stride) {
-      if (groups[i]) init = agg(init, bound(groups[i], bf));
-    }
-
-    // if no headers, return margin calculation
-    if (!headers.length) return init;
-
-    // check if number of headers exceeds number of rows or columns
-    if (headers.length > limit) {
-      view.warn('Grid headers exceed limit: ' + limit);
-      headers = headers.slice(0, limit);
-    }
-
-    // apply offset
-    init += offset;
-
-    // clear mark bounds for all headers
-    for (j=0, m=headers.length; j<m; ++j) {
-      view.dirty(headers[j]);
-      headers[j].mark.bounds.clear();
-    }
-
-    // layout each header
-    for (i=start, j=0, m=headers.length; j<m; ++j, i+=stride) {
-      h = headers[j];
-      b = h.mark.bounds;
-
-      // search for nearest group to align to
-      // necessary if table has empty cells
-      for (k=i; k >= 0 && (g = groups[k]) == null; k-=back);
-
-      // assign coordinates and update bounds
-      if (isX) {
-        x = band == null ? g.x : Math.round(g.bounds.x1 + band * g.bounds.width());
-        y = init;
-      } else {
-        x = init;
-        y = band == null ? g.y : Math.round(g.bounds.y1 + band * g.bounds.height());
-      }
-      b.union(h.bounds.translate(x - (h.x || 0), y - (h.y || 0)));
-      h.x = x;
-      h.y = y;
-      view.dirty(h);
-
-      // update current edge of layout bounds
-      edge = agg(edge, b[bf]);
-    }
-
-    return edge;
-  }
-
-  function layoutTitle(view, g, offset, isX, bounds, band) {
-    if (!g) return;
-    view.dirty(g);
-
-    // compute title coordinates
-    var x = offset, y = offset;
-    isX
-      ? (x = Math.round(bounds.x1 + band * bounds.width()))
-      : (y = Math.round(bounds.y1 + band * bounds.height()));
-
-    // assign coordinates and update bounds
-    g.bounds.translate(x - (g.x || 0), y - (g.y || 0));
-    g.mark.bounds.clear().union(g.bounds);
-    g.x = x;
-    g.y = y;
-
-    // queue title for redraw
-    view.dirty(g);
-  }
-
-  // utility for looking up legend layout configuration
-  function lookup$2(config, orient) {
-    const opt = config[orient] || {};
-    return (key, d) => opt[key] != null ? opt[key]
-      : config[key] != null ? config[key]
-      : d;
-  }
-
-  // if legends specify offset directly, use the maximum specified value
-  function offsets(legends, value) {
-    var max = -Infinity;
-    legends.forEach(item => {
-      if (item.offset != null) max = Math.max(max, item.offset);
-    });
-    return max > -Infinity ? max : value;
-  }
-
-  function legendParams(g, orient, config, xb, yb, w, h) {
-    const _ = lookup$2(config, orient),
-          offset = offsets(g, _('offset', 0)),
-          anchor = _('anchor', Start),
-          mult = anchor === End ? 1 : anchor === Middle ? 0.5 : 0;
-
-    const p = {
-      align:   Each,
-      bounds:  _('bounds', Flush),
-      columns: _('direction') === 'vertical' ? 1 : g.length,
-      padding: _('margin', 8),
-      center:  _('center'),
-      nodirty: true
-    };
-
-    switch (orient) {
-      case Left:
-        p.anchor = {
-          x: Math.floor(xb.x1) - offset, column: End,
-          y: mult * (h || xb.height() + 2 * xb.y1), row: anchor
-        };
-        break;
-      case Right:
-        p.anchor = {
-          x: Math.ceil(xb.x2) + offset,
-          y: mult * (h || xb.height() + 2 * xb.y1), row: anchor
-        };
-        break;
-      case Top:
-        p.anchor = {
-          y: Math.floor(yb.y1) - offset, row: End,
-          x: mult * (w || yb.width() + 2 * yb.x1), column: anchor
-        };
-        break;
-      case Bottom:
-        p.anchor = {
-          y: Math.ceil(yb.y2) + offset,
-          x: mult * (w || yb.width() + 2 * yb.x1), column: anchor
-        };
-        break;
-      case TopLeft:
-        p.anchor = {x: offset, y: offset};
-        break;
-      case TopRight:
-        p.anchor = {x: w - offset, y: offset, column: End};
-        break;
-      case BottomLeft:
-        p.anchor = {x: offset, y: h - offset, row: End};
-        break;
-      case BottomRight:
-        p.anchor = {x: w - offset, y: h - offset, column: End, row: End};
         break;
     }
 
-    return p;
+    return prec;
   }
 
-  function legendLayout(view, legend) {
-    var item = legend.items[0],
-        datum = item.datum,
-        orient = item.orient,
-        bounds = item.bounds,
-        x = item.x, y = item.y, w, h;
+  // 11.5 Multiplicative Operators
+  // 11.6 Additive Operators
+  // 11.7 Bitwise Shift Operators
+  // 11.8 Relational Operators
+  // 11.9 Equality Operators
+  // 11.10 Binary Bitwise Operators
+  // 11.11 Binary Logical Operators
 
-    // cache current bounds for later comparison
-    item._bounds
-      ? item._bounds.clear().union(bounds)
-      : item._bounds = bounds.clone();
-    bounds.clear();
+  function parseBinaryExpression() {
+    var marker, markers, expr, token, prec, stack, right, operator, left, i;
 
-    // adjust legend to accommodate padding and title
-    legendGroupLayout(view, item, item.items[0].items[0]);
+    marker = lookahead;
+    left = parseUnaryExpression();
 
-    // aggregate bounds to determine size, and include origin
-    bounds = legendBounds(item, bounds);
-    w = 2 * item.padding;
-    h = 2 * item.padding;
-    if (!bounds.empty()) {
-      w = Math.ceil(bounds.width() + w);
-      h = Math.ceil(bounds.height() + h);
+    token = lookahead;
+    prec = binaryPrecedence(token);
+    if (prec === 0) {
+      return left;
     }
+    token.prec = prec;
+    lex();
 
-    if (datum.type === Symbols) {
-      legendEntryLayout(item.items[0].items[0].items[0].items);
-    }
+    markers = [marker, lookahead];
+    right = parseUnaryExpression();
 
-    if (orient !== None$1) {
-      item.x = x = 0;
-      item.y = y = 0;
-    }
-    item.width = w;
-    item.height = h;
-    boundStroke(bounds.set(x, y, x + w, y + h), item);
-    item.mark.bounds.clear().union(bounds);
+    stack = [left, token, right];
 
-    return item;
-  }
+    while ((prec = binaryPrecedence(lookahead)) > 0) {
 
-  function legendBounds(item, b) {
-    // aggregate item bounds
-    item.items.forEach(_ => b.union(_.bounds));
-
-    // anchor to legend origin
-    b.x1 = item.padding;
-    b.y1 = item.padding;
-
-    return b;
-  }
-
-  function legendGroupLayout(view, item, entry) {
-    var pad = item.padding,
-        ex = pad - entry.x,
-        ey = pad - entry.y;
-
-    if (!item.datum.title) {
-      if (ex || ey) translate$2(view, entry, ex, ey);
-    } else {
-      var title = item.items[1].items[0],
-          anchor = title.anchor,
-          tpad = item.titlePadding || 0,
-          tx = pad - title.x,
-          ty = pad - title.y;
-
-      switch (title.orient) {
-        case Left:
-          ex += Math.ceil(title.bounds.width()) + tpad;
-          break;
-        case Right:
-        case Bottom:
-          break;
-        default:
-          ey += title.fontSize + tpad;
+      // Reduce: make a binary expression from the three topmost entries.
+      while ((stack.length > 2) && (prec <= stack[stack.length - 2].prec)) {
+        right = stack.pop();
+        operator = stack.pop().value;
+        left = stack.pop();
+        markers.pop();
+        expr = finishBinaryExpression(operator, left, right);
+        stack.push(expr);
       }
-      if (ex || ey) translate$2(view, entry, ex, ey);
 
-      switch (title.orient) {
-        case Left:
-          ty += legendTitleOffset(item, entry, title, anchor, 0, 1);
-          break;
-        case Right:
-          tx += legendTitleOffset(item, entry, title, End, 1, 0) + tpad;
-          ty += legendTitleOffset(item, entry, title, anchor, 0, 1);
-          break;
-        case Bottom:
-          tx += legendTitleOffset(item, entry, title, anchor, 1, 0);
-          ty += legendTitleOffset(item, entry, title, End, 0, 0, 1) + tpad;
-          break;
-        default:
-          tx += legendTitleOffset(item, entry, title, anchor, 1, 0);
-      }
-      if (tx || ty) translate$2(view, title, tx, ty);
-
-      // translate legend if title pushes into negative coordinates
-      if ((tx = Math.round(title.bounds.x1 - pad)) < 0) {
-        translate$2(view, entry, -tx, 0);
-        translate$2(view, title, -tx, 0);
-      }
-    }
-  }
-
-  function legendTitleOffset(item, entry, title, anchor, x, lr, noBar) {
-    const grad = item.datum.type !== 'symbol',
-          vgrad = title.datum.vgrad,
-          e = grad && (lr || !vgrad) && !noBar ? entry.items[0] : entry,
-          s = e.bounds[x ? 'x2' : 'y2'] - item.padding,
-          u = vgrad && lr ? s : 0,
-          v = vgrad && lr ? 0 : s;
-
-    return Math.round(anchor === Start ? u : anchor === End ? v : 0.5 * s);
-  }
-
-  function translate$2(view, item, dx, dy) {
-    item.x += dx;
-    item.y += dy;
-    item.bounds.translate(dx, dy);
-    item.mark.bounds.translate(dx, dy);
-    view.dirty(item);
-  }
-
-  function legendEntryLayout(entries) {
-    // get max widths for each column
-    var widths = entries.reduce(function(w, g) {
-      w[g.column] = Math.max(g.bounds.x2 - g.x, w[g.column] || 0);
-      return w;
-    }, {});
-
-    // set dimensions of legend entry groups
-    entries.forEach(function(g) {
-      g.width  = widths[g.column];
-      g.height = g.bounds.y2 - g.y;
-    });
-  }
-
-  function titleLayout(view, title, width, height, viewBounds) {
-    var item = title.items[0],
-        frame = item.frame,
-        orient = item.orient,
-        anchor = item.anchor,
-        offset = item.offset,
-        bounds = item.bounds,
-        vertical = (orient === Left || orient === Right),
-        start = 0,
-        end = vertical ? height : width,
-        x = 0, y = 0, pos;
-
-    if (frame !== Group) {
-      orient === Left ? (start = viewBounds.y2, end = viewBounds.y1)
-        : orient === Right ? (start = viewBounds.y1, end = viewBounds.y2)
-        : (start = viewBounds.x1, end = viewBounds.x2);
-    } else if (orient === Left) {
-      start = height, end = 0;
+      // Shift.
+      token = lex();
+      token.prec = prec;
+      stack.push(token);
+      markers.push(lookahead);
+      expr = parseUnaryExpression();
+      stack.push(expr);
     }
 
-    pos = (anchor === Start) ? start
-      : (anchor === End) ? end
-      : (start + end) / 2;
-
-    tempBounds$2.clear().union(bounds);
-
-    // position title text
-    switch (orient) {
-      case Top:
-        x = pos;
-        y = viewBounds.y1 - offset;
-        break;
-      case Left:
-        x = viewBounds.x1 - offset;
-        y = pos;
-        break;
-      case Right:
-        x = viewBounds.x2 + offset;
-        y = pos;
-        break;
-      case Bottom:
-        x = pos;
-        y = viewBounds.y2 + offset;
-        break;
-      default:
-        x = item.x;
-        y = item.y;
+    // Final reduce to clean-up the stack.
+    i = stack.length - 1;
+    expr = stack[i];
+    markers.pop();
+    while (i > 1) {
+      markers.pop();
+      expr = finishBinaryExpression(stack[i - 1].value, stack[i - 2], expr);
+      i -= 2;
     }
 
-    bounds.translate(x - (item.x || 0), y - (item.y || 0));
-    if (set(item, 'x', x) | set(item, 'y', y)) {
-      item.bounds = tempBounds$2;
-      view.dirty(item);
-      item.bounds = bounds;
-      view.dirty(item);
+    return expr;
+  }
+
+  // 11.12 Conditional Operator
+
+  function parseConditionalExpression() {
+    var expr, consequent, alternate;
+
+    expr = parseBinaryExpression();
+
+    if (match('?')) {
+      lex();
+      consequent = parseConditionalExpression();
+      expect(':');
+      alternate = parseConditionalExpression();
+
+      expr = finishConditionalExpression(expr, consequent, alternate);
     }
 
-    // update bounds
-    return title.bounds.clear().union(bounds);
+    return expr;
   }
 
-  /**
-   * Layout view elements such as axes and legends.
-   * Also performs size adjustments.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {object} params.mark - Scenegraph mark of groups to layout.
-   */
-  function ViewLayout(params) {
-    Transform.call(this, null, params);
+  // 11.14 Comma Operator
+
+  function parseExpression() {
+    var expr = parseConditionalExpression();
+
+    if (match(',')) {
+      throw new Error(DISABLED); // no sequence expressions
+    }
+
+    return expr;
   }
 
-  var prototype$S = inherits(ViewLayout, Transform);
+  function parse$3(code) {
+    source$1 = code;
+    index = 0;
+    length = source$1.length;
+    lookahead = null;
 
-  prototype$S.transform = function(_, pulse) {
-    // TODO incremental update, output?
-    var view = pulse.dataflow;
-    _.mark.items.forEach(function(group) {
-      if (_.layout) trellisLayout(view, group, _.layout);
-      layoutGroup(view, group, _);
-    });
-    if (_.modified()) pulse.reflow();
-    return pulse;
+    peek$1();
+
+    var expr = parseExpression();
+
+    if (lookahead.type !== TokenEOF) {
+      throw new Error("Unexpect token after expression.");
+    }
+    return expr;
+  }
+
+  var constants = {
+    NaN:       'NaN',
+    E:         'Math.E',
+    LN2:       'Math.LN2',
+    LN10:      'Math.LN10',
+    LOG2E:     'Math.LOG2E',
+    LOG10E:    'Math.LOG10E',
+    PI:        'Math.PI',
+    SQRT1_2:   'Math.SQRT1_2',
+    SQRT2:     'Math.SQRT2',
+    MIN_VALUE: 'Number.MIN_VALUE',
+    MAX_VALUE: 'Number.MAX_VALUE'
   };
 
-  function layoutGroup(view, group, _) {
-    var items = group.items,
-        width = Math.max(0, group.width || 0),
-        height = Math.max(0, group.height || 0),
-        viewBounds = new Bounds().set(0, 0, width, height),
-        xBounds = viewBounds.clone(),
-        yBounds = viewBounds.clone(),
-        legends = [], title,
-        mark, orient, b, i, n;
+  function functions(codegen) {
 
-    // layout axes, gather legends, collect bounds
-    for (i=0, n=items.length; i<n; ++i) {
-      mark = items[i];
-      switch (mark.role) {
-        case AxisRole:
-          b = isYAxis(mark) ? xBounds : yBounds;
-          b.union(axisLayout(view, mark, width, height));
-          break;
-        case TitleRole:
-          title = mark;
-          break;
-        case LegendRole:
-          legends.push(legendLayout(view, mark));
-          break;
-        case FrameRole:
-        case ScopeRole:
-        case RowHeader:
-        case RowFooter:
-        case RowTitle:
-        case ColHeader:
-        case ColFooter:
-        case ColTitle:
-          xBounds.union(mark.bounds);
-          yBounds.union(mark.bounds);
-          break;
-        default:
-          viewBounds.union(mark.bounds);
+    function fncall(name, args, cast, type) {
+      var obj = codegen(args[0]);
+      if (cast) {
+        obj = cast + '(' + obj + ')';
+        if (cast.lastIndexOf('new ', 0) === 0) obj = '(' + obj + ')';
       }
+      return obj + '.' + name + (type < 0 ? '' : type === 0 ?
+        '()' :
+        '(' + args.slice(1).map(codegen).join(',') + ')');
     }
 
-    // layout legends, adjust viewBounds
-    if (legends.length) {
-      // group legends by orient
-      const l = {};
-      legends.forEach(item => {
-        orient = item.orient || Right;
-        if (orient !== None$1) (l[orient] || (l[orient] = [])).push(item);
-      });
+    function fn(name, cast, type) {
+      return function(args) {
+        return fncall(name, args, cast, type);
+      };
+    }
 
-      // perform grid layout for each orient group
-      for (let orient in l) {
-        const g = l[orient];
-        gridLayout(view, g, legendParams(
-          g, orient, _.legends, xBounds, yBounds, width, height
-        ));
-      }
+    var DATE = 'new Date',
+        STRING = 'String',
+        REGEXP = 'RegExp';
 
-      // update view bounds
-      legends.forEach(item => {
-        const b = item.bounds;
+    return {
+      // MATH functions
+      isNaN:    'isNaN',
+      isFinite: 'isFinite',
+      abs:      'Math.abs',
+      acos:     'Math.acos',
+      asin:     'Math.asin',
+      atan:     'Math.atan',
+      atan2:    'Math.atan2',
+      ceil:     'Math.ceil',
+      cos:      'Math.cos',
+      exp:      'Math.exp',
+      floor:    'Math.floor',
+      log:      'Math.log',
+      max:      'Math.max',
+      min:      'Math.min',
+      pow:      'Math.pow',
+      random:   'Math.random',
+      round:    'Math.round',
+      sin:      'Math.sin',
+      sqrt:     'Math.sqrt',
+      tan:      'Math.tan',
 
-        if (!b.equals(item._bounds)) {
-          item.bounds = item._bounds;
-          view.dirty(item); // dirty previous location
-          item.bounds = b;
-          view.dirty(item);
+      clamp: function(args) {
+        if (args.length < 3) error('Missing arguments to clamp function.');
+        if (args.length > 3) error('Too many arguments to clamp function.');
+        var a = args.map(codegen);
+        return 'Math.max('+a[1]+', Math.min('+a[2]+','+a[0]+'))';
+      },
+
+      // DATE functions
+      now:             'Date.now',
+      utc:             'Date.UTC',
+      datetime:        DATE,
+      date:            fn('getDate', DATE, 0),
+      day:             fn('getDay', DATE, 0),
+      year:            fn('getFullYear', DATE, 0),
+      month:           fn('getMonth', DATE, 0),
+      hours:           fn('getHours', DATE, 0),
+      minutes:         fn('getMinutes', DATE, 0),
+      seconds:         fn('getSeconds', DATE, 0),
+      milliseconds:    fn('getMilliseconds', DATE, 0),
+      time:            fn('getTime', DATE, 0),
+      timezoneoffset:  fn('getTimezoneOffset', DATE, 0),
+      utcdate:         fn('getUTCDate', DATE, 0),
+      utcday:          fn('getUTCDay', DATE, 0),
+      utcyear:         fn('getUTCFullYear', DATE, 0),
+      utcmonth:        fn('getUTCMonth', DATE, 0),
+      utchours:        fn('getUTCHours', DATE, 0),
+      utcminutes:      fn('getUTCMinutes', DATE, 0),
+      utcseconds:      fn('getUTCSeconds', DATE, 0),
+      utcmilliseconds: fn('getUTCMilliseconds', DATE, 0),
+
+      // sequence functions
+      length:      fn('length', null, -1),
+      join:        fn('join', null),
+      indexof:     fn('indexOf', null),
+      lastindexof: fn('lastIndexOf', null),
+      slice:       fn('slice', null),
+
+      reverse: function(args) {
+        return '('+codegen(args[0])+').slice().reverse()';
+      },
+
+      // STRING functions
+      parseFloat:  'parseFloat',
+      parseInt:    'parseInt',
+      upper:       fn('toUpperCase', STRING, 0),
+      lower:       fn('toLowerCase', STRING, 0),
+      substring:   fn('substring', STRING),
+      split:       fn('split', STRING),
+      replace:     fn('replace', STRING),
+      trim:        fn('trim', STRING, 0),
+
+      // REGEXP functions
+      regexp:  REGEXP,
+      test:    fn('test', REGEXP),
+
+      // Control Flow functions
+      if: function(args) {
+          if (args.length < 3) error('Missing arguments to if function.');
+          if (args.length > 3) error('Too many arguments to if function.');
+          var a = args.map(codegen);
+          return '('+a[0]+'?'+a[1]+':'+a[2]+')';
         }
+    };
+  }
 
-        if (_.autosize && _.autosize.type === Fit) {
-          // For autosize fit, incorporate the orthogonal dimension only.
-          // Legends that overrun the chart area will then be clipped;
-          // otherwise the chart area gets reduced to nothing!
-          switch(item.orient) {
-            case Left:
-            case Right:
-              viewBounds.add(b.x1, 0).add(b.x2, 0);
-              break;
-            case Top:
-            case Bottom:
-              viewBounds.add(0, b.y1).add(0, b.y2);
+  function stripQuotes(s) {
+    var n = s && s.length - 1;
+    return n && (
+        (s[0]==='"' && s[n]==='"') ||
+        (s[0]==='\'' && s[n]==='\'')
+      ) ? s.slice(1, -1) : s;
+  }
+
+  function codegen(opt) {
+    opt = opt || {};
+
+    var whitelist = opt.whitelist ? toSet(opt.whitelist) : {},
+        blacklist = opt.blacklist ? toSet(opt.blacklist) : {},
+        constants$1 = opt.constants || constants,
+        functions$1 = (opt.functions || functions)(visit),
+        globalvar = opt.globalvar,
+        fieldvar = opt.fieldvar,
+        globals = {},
+        fields = {},
+        memberDepth = 0;
+
+    var outputGlobal = isFunction(globalvar)
+      ? globalvar
+      : function (id) { return globalvar + '["' + id + '"]'; };
+
+    function visit(ast) {
+      if (isString(ast)) return ast;
+      var generator = Generators[ast.type];
+      if (generator == null) error('Unsupported type: ' + ast.type);
+      return generator(ast);
+    }
+
+    var Generators = {
+      Literal: function(n) {
+          return n.raw;
+        },
+
+      Identifier: function(n) {
+        var id = n.name;
+        if (memberDepth > 0) {
+          return id;
+        } else if (blacklist.hasOwnProperty(id)) {
+          return error('Illegal identifier: ' + id);
+        } else if (constants$1.hasOwnProperty(id)) {
+          return constants$1[id];
+        } else if (whitelist.hasOwnProperty(id)) {
+          return id;
+        } else {
+          globals[id] = 1;
+          return outputGlobal(id);
+        }
+      },
+
+      MemberExpression: function(n) {
+          var d = !n.computed;
+          var o = visit(n.object);
+          if (d) memberDepth += 1;
+          var p = visit(n.property);
+          if (o === fieldvar) {
+            // strip quotes to sanitize field name (#1653)
+            fields[stripQuotes(p)] = 1;
           }
-        } else {
-          viewBounds.union(b);
+          if (d) memberDepth -= 1;
+          return o + (d ? '.'+p : '['+p+']');
+        },
+
+      CallExpression: function(n) {
+          if (n.callee.type !== 'Identifier') {
+            error('Illegal callee type: ' + n.callee.type);
+          }
+          var callee = n.callee.name;
+          var args = n.arguments;
+          var fn = functions$1.hasOwnProperty(callee) && functions$1[callee];
+          if (!fn) error('Unrecognized function: ' + callee);
+          return isFunction(fn)
+            ? fn(args)
+            : fn + '(' + args.map(visit).join(',') + ')';
+        },
+
+      ArrayExpression: function(n) {
+          return '[' + n.elements.map(visit).join(',') + ']';
+        },
+
+      BinaryExpression: function(n) {
+          return '(' + visit(n.left) + n.operator + visit(n.right) + ')';
+        },
+
+      UnaryExpression: function(n) {
+          return '(' + n.operator + visit(n.argument) + ')';
+        },
+
+      ConditionalExpression: function(n) {
+          return '(' + visit(n.test) +
+            '?' + visit(n.consequent) +
+            ':' + visit(n.alternate) +
+            ')';
+        },
+
+      LogicalExpression: function(n) {
+          return '(' + visit(n.left) + n.operator + visit(n.right) + ')';
+        },
+
+      ObjectExpression: function(n) {
+          return '{' + n.properties.map(visit).join(',') + '}';
+        },
+
+      Property: function(n) {
+          memberDepth += 1;
+          var k = visit(n.key);
+          memberDepth -= 1;
+          return k + ':' + visit(n.value);
         }
-      });
+    };
+
+    function codegen(ast) {
+      var result = {
+        code:    visit(ast),
+        globals: Object.keys(globals),
+        fields:  Object.keys(fields)
+      };
+      globals = {};
+      fields = {};
+      return result;
     }
 
-    // combine bounding boxes
-    viewBounds.union(xBounds).union(yBounds);
+    codegen.functions = functions$1;
+    codegen.constants = constants$1;
 
-    // layout title, adjust bounds
-    if (title) {
-      viewBounds.union(titleLayout(view, title, width, height, viewBounds));
-    }
-
-    // perform size adjustment
-    viewSizeLayout(view, group, viewBounds, _);
+    return codegen;
   }
 
-  function viewSizeLayout(view, group, viewBounds, _) {
-    var auto = _.autosize || {},
-        type = auto.type,
-        viewWidth = view._width,
-        viewHeight = view._height,
-        padding = view.padding();
+  const Intersect = 'intersect';
+  const Union = 'union';
 
-    if (view._autosize < 1 || !type) return;
+  var TYPE_ENUM = 'E',
+      TYPE_RANGE_INC = 'R',
+      TYPE_RANGE_EXC = 'R-E',
+      TYPE_RANGE_LE = 'R-LE',
+      TYPE_RANGE_RE = 'R-RE',
+      UNIT_INDEX = 'index:unit';
 
-    var width  = Math.max(0, group.width || 0),
-        left   = Math.max(0, Math.ceil(-viewBounds.x1)),
-        right  = Math.max(0, Math.ceil(viewBounds.x2 - width)),
-        height = Math.max(0, group.height || 0),
-        top    = Math.max(0, Math.ceil(-viewBounds.y1)),
-        bottom = Math.max(0, Math.ceil(viewBounds.y2 - height));
+  // TODO: revisit date coercion?
+  function testPoint(datum, entry) {
+    var fields = entry.fields,
+        values = entry.values,
+        n = fields.length,
+        i = 0, dval, f;
 
-    if (auto.contains === Padding) {
-      viewWidth -= padding.left + padding.right;
-      viewHeight -= padding.top + padding.bottom;
-    }
+    for (; i<n; ++i) {
+      f = fields[i];
+      f.getter = field.getter || field(f.field);
+      dval = f.getter(datum);
 
-    if (type === None$1) {
-      left = 0;
-      top = 0;
-      width = viewWidth;
-      height = viewHeight;
-    }
+      if (isDate(dval)) dval = toNumber(dval);
+      if (isDate(values[i])) values[i] = toNumber(values[i]);
+      if (isDate(values[i][0])) values[i] = values[i].map(toNumber);
 
-    else if (type === Fit) {
-      width = Math.max(0, viewWidth - left - right);
-      height = Math.max(0, viewHeight - top - bottom);
-    }
-
-    else if (type === FitX) {
-      width = Math.max(0, viewWidth - left - right);
-      viewHeight = height + top + bottom;
-    }
-
-    else if (type === FitY) {
-      viewWidth = width + left + right;
-      height = Math.max(0, viewHeight - top - bottom);
-    }
-
-    else if (type === Pad) {
-      viewWidth = width + left + right;
-      viewHeight = height + top + bottom;
-    }
-
-    view._resizeView(
-      viewWidth, viewHeight,
-      width, height,
-      [left, top],
-      auto.resize
-    );
-  }
-
-
-
-  var vtx = /*#__PURE__*/Object.freeze({
-    bound: Bound,
-    identifier: Identifier,
-    mark: Mark,
-    overlap: Overlap,
-    render: Render,
-    viewlayout: ViewLayout
-  });
-
-  function bandSpace(count, paddingInner, paddingOuter) {
-    var space = count - paddingInner + paddingOuter * 2;
-    return count ? (space > 0 ? space : 1) : 0;
-  }
-
-  const Identity = 'identity';
-
-  const Linear$1 = 'linear';
-  const Log = 'log';
-  const Pow = 'pow';
-  const Sqrt = 'sqrt';
-  const Symlog = 'symlog';
-
-  const Time = 'time';
-  const UTC = 'utc';
-
-  const Sequential = 'sequential';
-  const Diverging = 'diverging';
-
-  const Quantile = 'quantile';
-  const Quantize = 'quantize';
-  const Threshold = 'threshold';
-
-  const Ordinal = 'ordinal';
-  const Point = 'point';
-  const Band = 'band';
-  const BinOrdinal = 'bin-ordinal';
-
-  function isValidScaleType(type) {
-    switch (type) {
-      case Identity:
-      case Linear$1:
-      case Log:
-      case Pow:
-      case Sqrt:
-      case Symlog:
-      case Time:
-      case UTC:
-      case Sequential:
-      case Quantile:
-      case Quantize:
-      case Threshold:
-      case Ordinal:
-      case Point:
-      case Band:
-      case BinOrdinal:
-        return true;
-    }
-    return false;
-  }
-
-  function isQuantile(key) {
-    return key === Quantile;
-  }
-
-  function isSequential(key) {
-    return key && key.startsWith(Sequential);
-  }
-
-  function isDiverging(key) {
-    return key && key.startsWith(Diverging);
-  }
-
-  function isInterpolating(key) {
-    return isSequential(key) || isDiverging(key);
-  }
-
-  function isLogarithmic(key) {
-    return key === Log || key.endsWith('-log');
-  }
-
-  function isContinuous(key) {
-    switch (key) {
-      case Linear$1:
-      case Log:
-      case Pow:
-      case Sqrt:
-      case Symlog:
-      case Time:
-      case UTC:
-      case Sequential:
-        return true;
-    }
-    return false;
-  }
-
-  function isDiscrete(key) {
-    return key === BinOrdinal
-      || key === Ordinal
-      || key === Band
-      || key === Point;
-  }
-
-  function isDiscretizing(key) {
-    return key === BinOrdinal
-      || key === Quantile
-      || key === Quantize
-      || key === Threshold;
-  }
-
-  var time = {
-    millisecond: millisecond,
-    second:      second,
-    minute:      minute,
-    hour:        hour,
-    day:         day,
-    week:        sunday,
-    month:       month,
-    year:        year
-  };
-
-  var utc = {
-    millisecond: millisecond,
-    second:      second,
-    minute:      utcMinute,
-    hour:        utcHour,
-    day:         utcDay,
-    week:        utcSunday,
-    month:       utcMonth,
-    year:        utcYear
-  };
-
-  function timeInterval(unit, type) {
-    const t = (type === UTC ? utc : time);
-    return t.hasOwnProperty(unit) && t[unit];
-  }
-
-  function invertRange(scale) {
-    return function(_) {
-      var lo = _[0],
-          hi = _[1],
-          t;
-
-      if (hi < lo) {
-        t = lo;
-        lo = hi;
-        hi = t;
-      }
-
-      return [
-        scale.invert(lo),
-        scale.invert(hi)
-      ];
-    }
-  }
-
-  function invertRangeExtent(scale) {
-    return function(_) {
-      var range = scale.range(),
-          lo = _[0],
-          hi = _[1],
-          min = -1, max, t, i, n;
-
-      if (hi < lo) {
-        t = lo;
-        lo = hi;
-        hi = t;
-      }
-
-      for (i=0, n=range.length; i<n; ++i) {
-        if (range[i] >= lo && range[i] <= hi) {
-          if (min < 0) min = i;
-          max = i;
+      if (f.type === TYPE_ENUM) {
+        // Enumerated fields can either specify individual values (single/multi selections)
+        // or an array of values (interval selections).
+        if(isArray(values[i]) ? values[i].indexOf(dval) < 0 : dval !== values[i]) {
+          return false;
+        }
+      } else {
+        if (f.type === TYPE_RANGE_INC) {
+          if (!inrange(dval, values[i])) return false;
+        } else if (f.type === TYPE_RANGE_RE) {
+          // Discrete selection of bins test within the range [bin_start, bin_end).
+          if (!inrange(dval, values[i], true, false)) return false;
+        } else if (f.type === TYPE_RANGE_EXC) { // 'R-E'/'R-LE' included for completeness.
+          if (!inrange(dval, values[i], false, false)) return false;
+        } else if (f.type === TYPE_RANGE_LE) {
+          if (!inrange(dval, values[i], false, true)) return false;
         }
       }
-
-      if (min < 0) return undefined;
-
-      lo = scale.invertExtent(range[min]);
-      hi = scale.invertExtent(range[max]);
-
-      return [
-        lo[0] === undefined ? lo[1] : lo[0],
-        hi[1] === undefined ? hi[0] : hi[1]
-      ];
     }
+
+    return true;
   }
 
-  function initRange(domain, range) {
-    switch (arguments.length) {
-      case 0: break;
-      case 1: this.range(domain); break;
-      default: this.range(range).domain(domain); break;
-    }
-    return this;
-  }
+  /**
+   * Tests if a tuple is contained within an interactive selection.
+   * @param {string} name - The name of the data set representing the selection.
+   *  Tuples in the dataset are of the form
+   *  {unit: string, fields: array<fielddef>, values: array<*>}.
+   *  Fielddef is of the form
+   *  {field: string, channel: string, type: 'E' | 'R'} where
+   *  'type' identifies whether tuples in the dataset enumerate
+   *  values for the field, or specify a continuous range.
+   * @param {object} datum - The tuple to test for inclusion.
+   * @param {string} op - The set operation for combining selections.
+   *   One of 'intersect' or 'union' (default).
+   * @return {boolean} - True if the datum is in the selection, false otherwise.
+   */
+  function selectionTest(name, datum, op) {
+    var data = this.context.data[name],
+        entries = data ? data.values.value : [],
+        unitIdx = data ? data[UNIT_INDEX] && data[UNIT_INDEX].value : undefined,
+        intersect = op === Intersect,
+        n = entries.length,
+        i = 0,
+        entry, miss, count, unit, b;
 
-  function initInterpolator(domain, interpolator) {
-    switch (arguments.length) {
-      case 0: break;
-      case 1: this.interpolator(domain); break;
-      default: this.interpolator(interpolator).domain(domain); break;
-    }
-    return this;
-  }
+    for (; i<n; ++i) {
+      entry = entries[i];
 
-  const implicit = Symbol("implicit");
+      if (unitIdx && intersect) {
+        // multi selections union within the same unit and intersect across units.
+        miss = miss || {};
+        count = miss[unit=entry.unit] || 0;
 
-  function ordinal() {
-    var index = new Map(),
-        domain = [],
-        range = [],
-        unknown = implicit;
+        // if we've already matched this unit, skip.
+        if (count === -1) continue;
 
-    function scale(d) {
-      var key = d + "", i = index.get(key);
-      if (!i) {
-        if (unknown !== implicit) return unknown;
-        index.set(key, i = domain.push(d));
+        b = testPoint(datum, entry);
+        miss[unit] = b ? -1 : ++count;
+
+        // if we match and there are no other units return true
+        // if we've missed against all tuples in this unit return false
+        if (b && unitIdx.size === 1) return true;
+        if (!b && count === unitIdx.get(unit).count) return false;
+      } else {
+        b = testPoint(datum, entry);
+
+        // if we find a miss and we do require intersection return false
+        // if we find a match and we don't require intersection return true
+        if (intersect ^ b) return b;
       }
-      return range[(i - 1) % range.length];
     }
 
-    scale.domain = function(_) {
-      if (!arguments.length) return domain.slice();
-      domain = [], index = new Map();
-      for (const value of _) {
-        const key = value + "";
-        if (index.has(key)) continue;
-        index.set(key, domain.push(value));
+    // if intersecting and we made it here, then we saw no misses
+    // if not intersecting, then we saw no matches
+    // if no active selections, return false
+    return n && intersect;
+  }
+
+  /**
+   * Resolves selection for use as a scale domain or reads via the API.
+   * @param {string} name - The name of the dataset representing the selection
+   * @param {string} [op='union'] - The set operation for combining selections.
+   *                 One of 'intersect' or 'union' (default).
+   * @returns {object} An object of selected fields and values.
+   */
+  function selectionResolve(name, op) {
+    var data = this.context.data[name],
+      entries = data ? data.values.value : [],
+      resolved = {}, types = {},
+      entry, fields, values, unit, field, res, resUnit, type, union,
+      n = entries.length, i = 0, j, m;
+
+    // First union all entries within the same unit.
+    for (; i < n; ++i) {
+      entry = entries[i];
+      unit = entry.unit;
+      fields = entry.fields;
+      values = entry.values;
+
+      for (j = 0, m = fields.length; j < m; ++j) {
+        field = fields[j];
+        res = resolved[field.field] || (resolved[field.field] = {});
+        resUnit = res[unit] || (res[unit] = []);
+        types[field.field] = type = field.type.charAt(0);
+        union = ops[type + '_union'];
+        res[unit] = union(resUnit, array(values[j]));
       }
-      return scale;
-    };
+    }
 
-    scale.range = function(_) {
-      return arguments.length ? (range = Array.from(_), scale) : range.slice();
-    };
+    // Then resolve fields across units as per the op.
+    op = op || Union;
+    Object.keys(resolved).forEach(function (field) {
+      resolved[field] = Object.keys(resolved[field])
+        .map(function (unit) { return resolved[field][unit]; })
+        .reduce(function (acc, curr) {
+          return acc === undefined ? curr :
+            ops[types[field] + '_' + op](acc, curr);
+        });
+    });
 
-    scale.unknown = function(_) {
-      return arguments.length ? (unknown = _, scale) : unknown;
-    };
+    return resolved;
+  }
 
-    scale.copy = function() {
-      return ordinal(domain, range).unknown(unknown);
-    };
+  var ops = {
+    E_union: function(base, value) {
+      if (!base.length) return value;
 
-    initRange.apply(scale, arguments);
+      var i = 0, n = value.length;
+      for (; i<n; ++i) if (base.indexOf(value[i]) < 0) base.push(value[i]);
+      return base;
+    },
 
-    return scale;
+    E_intersect: function(base, value) {
+      return !base.length ? value :
+        base.filter(function (v) { return value.indexOf(v) >= 0; });
+    },
+
+    R_union: function(base, value) {
+      var lo = toNumber(value[0]), hi = toNumber(value[1]);
+      if (lo > hi) {
+        lo = value[1];
+        hi = value[0];
+      }
+
+      if (!base.length) return [lo, hi];
+      if (base[0] > lo) base[0] = lo;
+      if (base[1] < hi) base[1] = hi;
+      return base;
+    },
+
+    R_intersect: function(base, value) {
+      var lo = toNumber(value[0]), hi = toNumber(value[1]);
+      if (lo > hi) {
+        lo = value[1];
+        hi = value[0];
+      }
+
+      if (!base.length) return [lo, hi];
+      if (hi < base[0] || base[1] < lo) {
+        return [];
+      } else {
+        if (base[0] < lo) base[0] = lo;
+        if (base[1] > hi) base[1] = hi;
+      }
+      return base;
+    }
+  };
+
+  const DataPrefix = ':',
+        IndexPrefix = '@';
+
+  function selectionVisitor(name, args, scope, params) {
+    if (args[0].type !== Literal) error('First argument to selection functions must be a string literal.');
+
+    const data = args[0].value,
+          op = args.length >= 2 && peek(args).value,
+          field = 'unit',
+          indexName = IndexPrefix + field,
+          dataName = DataPrefix + data;
+
+    if (op === Intersect && !params.hasOwnProperty(indexName)) {
+      params[indexName] = scope.getData(data).indataRef(scope, field);
+    }
+
+    if (!params.hasOwnProperty(dataName)) {
+      params[dataName] = scope.getData(data).tuplesRef();
+    }
   }
 
   function define(constructor, factory, prototype) {
@@ -17498,6 +17038,636 @@
     }
   }));
 
+  function data(name) {
+    const data = this.context.data[name];
+    return data ? data.values.value : [];
+  }
+
+  function indata(name, field, value) {
+    const index = this.context.data[name]['index:' + field],
+          entry = index ? index.value.get(value) : undefined;
+    return entry ? entry.count : entry;
+  }
+
+  function setdata(name, tuples) {
+    const df = this.context.dataflow,
+          data = this.context.data[name],
+          input = data.input;
+
+    df.pulse(input, df.changeset().remove(truthy).insert(tuples));
+    return 1;
+  }
+
+  function encode(item, name, retval) {
+    if (item) {
+      const df = this.context.dataflow,
+            target = item.mark.source;
+      df.pulse(target, df.changeset().encode(item, name));
+    }
+    return retval !== undefined ? retval : item;
+  }
+
+  // Computes the decimal coefficient and exponent of the specified number x with
+  // significant digits p, where x is positive and p is in [1, 21] or undefined.
+  // For example, formatDecimal(1.23) returns ["123", 0].
+  function formatDecimal(x, p) {
+    if ((i = (x = p ? x.toExponential(p - 1) : x.toExponential()).indexOf("e")) < 0) return null; // NaN, ±Infinity
+    var i, coefficient = x.slice(0, i);
+
+    // The string returned by toExponential either has the form \d\.\d+e[-+]\d+
+    // (e.g., 1.2e+3) or the form \de[-+]\d+ (e.g., 1e+3).
+    return [
+      coefficient.length > 1 ? coefficient[0] + coefficient.slice(2) : coefficient,
+      +x.slice(i + 1)
+    ];
+  }
+
+  function exponent(x) {
+    return x = formatDecimal(Math.abs(x)), x ? x[1] : NaN;
+  }
+
+  function formatGroup(grouping, thousands) {
+    return function(value, width) {
+      var i = value.length,
+          t = [],
+          j = 0,
+          g = grouping[0],
+          length = 0;
+
+      while (i > 0 && g > 0) {
+        if (length + g + 1 > width) g = Math.max(1, width - length);
+        t.push(value.substring(i -= g, i + g));
+        if ((length += g + 1) > width) break;
+        g = grouping[j = (j + 1) % grouping.length];
+      }
+
+      return t.reverse().join(thousands);
+    };
+  }
+
+  function formatNumerals(numerals) {
+    return function(value) {
+      return value.replace(/[0-9]/g, function(i) {
+        return numerals[+i];
+      });
+    };
+  }
+
+  // [[fill]align][sign][symbol][0][width][,][.precision][~][type]
+  var re = /^(?:(.)?([<>=^]))?([+\-( ])?([$#])?(0)?(\d+)?(,)?(\.\d+)?(~)?([a-z%])?$/i;
+
+  function formatSpecifier(specifier) {
+    return new FormatSpecifier(specifier);
+  }
+
+  formatSpecifier.prototype = FormatSpecifier.prototype; // instanceof
+
+  function FormatSpecifier(specifier) {
+    if (!(match = re.exec(specifier))) throw new Error("invalid format: " + specifier);
+    var match;
+    this.fill = match[1] || " ";
+    this.align = match[2] || ">";
+    this.sign = match[3] || "-";
+    this.symbol = match[4] || "";
+    this.zero = !!match[5];
+    this.width = match[6] && +match[6];
+    this.comma = !!match[7];
+    this.precision = match[8] && +match[8].slice(1);
+    this.trim = !!match[9];
+    this.type = match[10] || "";
+  }
+
+  FormatSpecifier.prototype.toString = function() {
+    return this.fill
+        + this.align
+        + this.sign
+        + this.symbol
+        + (this.zero ? "0" : "")
+        + (this.width == null ? "" : Math.max(1, this.width | 0))
+        + (this.comma ? "," : "")
+        + (this.precision == null ? "" : "." + Math.max(0, this.precision | 0))
+        + (this.trim ? "~" : "")
+        + this.type;
+  };
+
+  // Trims insignificant zeros, e.g., replaces 1.2000k with 1.2k.
+  function formatTrim(s) {
+    out: for (var n = s.length, i = 1, i0 = -1, i1; i < n; ++i) {
+      switch (s[i]) {
+        case ".": i0 = i1 = i; break;
+        case "0": if (i0 === 0) i0 = i; i1 = i; break;
+        default: if (i0 > 0) { if (!+s[i]) break out; i0 = 0; } break;
+      }
+    }
+    return i0 > 0 ? s.slice(0, i0) + s.slice(i1 + 1) : s;
+  }
+
+  var prefixExponent;
+
+  function formatPrefixAuto(x, p) {
+    var d = formatDecimal(x, p);
+    if (!d) return x + "";
+    var coefficient = d[0],
+        exponent = d[1],
+        i = exponent - (prefixExponent = Math.max(-8, Math.min(8, Math.floor(exponent / 3))) * 3) + 1,
+        n = coefficient.length;
+    return i === n ? coefficient
+        : i > n ? coefficient + new Array(i - n + 1).join("0")
+        : i > 0 ? coefficient.slice(0, i) + "." + coefficient.slice(i)
+        : "0." + new Array(1 - i).join("0") + formatDecimal(x, Math.max(0, p + i - 1))[0]; // less than 1y!
+  }
+
+  function formatRounded(x, p) {
+    var d = formatDecimal(x, p);
+    if (!d) return x + "";
+    var coefficient = d[0],
+        exponent = d[1];
+    return exponent < 0 ? "0." + new Array(-exponent).join("0") + coefficient
+        : coefficient.length > exponent + 1 ? coefficient.slice(0, exponent + 1) + "." + coefficient.slice(exponent + 1)
+        : coefficient + new Array(exponent - coefficient.length + 2).join("0");
+  }
+
+  var formatTypes = {
+    "%": function(x, p) { return (x * 100).toFixed(p); },
+    "b": function(x) { return Math.round(x).toString(2); },
+    "c": function(x) { return x + ""; },
+    "d": function(x) { return Math.round(x).toString(10); },
+    "e": function(x, p) { return x.toExponential(p); },
+    "f": function(x, p) { return x.toFixed(p); },
+    "g": function(x, p) { return x.toPrecision(p); },
+    "o": function(x) { return Math.round(x).toString(8); },
+    "p": function(x, p) { return formatRounded(x * 100, p); },
+    "r": formatRounded,
+    "s": formatPrefixAuto,
+    "X": function(x) { return Math.round(x).toString(16).toUpperCase(); },
+    "x": function(x) { return Math.round(x).toString(16); }
+  };
+
+  function identity$2(x) {
+    return x;
+  }
+
+  var prefixes = ["y","z","a","f","p","n","µ","m","","k","M","G","T","P","E","Z","Y"];
+
+  function formatLocale$1(locale) {
+    var group = locale.grouping && locale.thousands ? formatGroup(locale.grouping, locale.thousands) : identity$2,
+        currency = locale.currency,
+        decimal = locale.decimal,
+        numerals = locale.numerals ? formatNumerals(locale.numerals) : identity$2,
+        percent = locale.percent || "%";
+
+    function newFormat(specifier) {
+      specifier = formatSpecifier(specifier);
+
+      var fill = specifier.fill,
+          align = specifier.align,
+          sign = specifier.sign,
+          symbol = specifier.symbol,
+          zero = specifier.zero,
+          width = specifier.width,
+          comma = specifier.comma,
+          precision = specifier.precision,
+          trim = specifier.trim,
+          type = specifier.type;
+
+      // The "n" type is an alias for ",g".
+      if (type === "n") comma = true, type = "g";
+
+      // The "" type, and any invalid type, is an alias for ".12~g".
+      else if (!formatTypes[type]) precision == null && (precision = 12), trim = true, type = "g";
+
+      // If zero fill is specified, padding goes after sign and before digits.
+      if (zero || (fill === "0" && align === "=")) zero = true, fill = "0", align = "=";
+
+      // Compute the prefix and suffix.
+      // For SI-prefix, the suffix is lazily computed.
+      var prefix = symbol === "$" ? currency[0] : symbol === "#" && /[boxX]/.test(type) ? "0" + type.toLowerCase() : "",
+          suffix = symbol === "$" ? currency[1] : /[%p]/.test(type) ? percent : "";
+
+      // What format function should we use?
+      // Is this an integer type?
+      // Can this type generate exponential notation?
+      var formatType = formatTypes[type],
+          maybeSuffix = /[defgprs%]/.test(type);
+
+      // Set the default precision if not specified,
+      // or clamp the specified precision to the supported range.
+      // For significant precision, it must be in [1, 21].
+      // For fixed precision, it must be in [0, 20].
+      precision = precision == null ? 6
+          : /[gprs]/.test(type) ? Math.max(1, Math.min(21, precision))
+          : Math.max(0, Math.min(20, precision));
+
+      function format(value) {
+        var valuePrefix = prefix,
+            valueSuffix = suffix,
+            i, n, c;
+
+        if (type === "c") {
+          valueSuffix = formatType(value) + valueSuffix;
+          value = "";
+        } else {
+          value = +value;
+
+          // Perform the initial formatting.
+          var valueNegative = value < 0;
+          value = formatType(Math.abs(value), precision);
+
+          // Trim insignificant zeros.
+          if (trim) value = formatTrim(value);
+
+          // If a negative value rounds to zero during formatting, treat as positive.
+          if (valueNegative && +value === 0) valueNegative = false;
+
+          // Compute the prefix and suffix.
+          valuePrefix = (valueNegative ? (sign === "(" ? sign : "-") : sign === "-" || sign === "(" ? "" : sign) + valuePrefix;
+          valueSuffix = (type === "s" ? prefixes[8 + prefixExponent / 3] : "") + valueSuffix + (valueNegative && sign === "(" ? ")" : "");
+
+          // Break the formatted value into the integer “value” part that can be
+          // grouped, and fractional or exponential “suffix” part that is not.
+          if (maybeSuffix) {
+            i = -1, n = value.length;
+            while (++i < n) {
+              if (c = value.charCodeAt(i), 48 > c || c > 57) {
+                valueSuffix = (c === 46 ? decimal + value.slice(i + 1) : value.slice(i)) + valueSuffix;
+                value = value.slice(0, i);
+                break;
+              }
+            }
+          }
+        }
+
+        // If the fill character is not "0", grouping is applied before padding.
+        if (comma && !zero) value = group(value, Infinity);
+
+        // Compute the padding.
+        var length = valuePrefix.length + value.length + valueSuffix.length,
+            padding = length < width ? new Array(width - length + 1).join(fill) : "";
+
+        // If the fill character is "0", grouping is applied after padding.
+        if (comma && zero) value = group(padding + value, padding.length ? width - valueSuffix.length : Infinity), padding = "";
+
+        // Reconstruct the final output based on the desired alignment.
+        switch (align) {
+          case "<": value = valuePrefix + value + valueSuffix + padding; break;
+          case "=": value = valuePrefix + padding + value + valueSuffix; break;
+          case "^": value = padding.slice(0, length = padding.length >> 1) + valuePrefix + value + valueSuffix + padding.slice(length); break;
+          default: value = padding + valuePrefix + value + valueSuffix; break;
+        }
+
+        return numerals(value);
+      }
+
+      format.toString = function() {
+        return specifier + "";
+      };
+
+      return format;
+    }
+
+    function formatPrefix(specifier, value) {
+      var f = newFormat((specifier = formatSpecifier(specifier), specifier.type = "f", specifier)),
+          e = Math.max(-8, Math.min(8, Math.floor(exponent(value) / 3))) * 3,
+          k = Math.pow(10, -e),
+          prefix = prefixes[8 + e / 3];
+      return function(value) {
+        return f(k * value) + prefix;
+      };
+    }
+
+    return {
+      format: newFormat,
+      formatPrefix: formatPrefix
+    };
+  }
+
+  var locale$1;
+  var format$1;
+  var formatPrefix;
+
+  defaultLocale$1({
+    decimal: ".",
+    thousands: ",",
+    grouping: [3],
+    currency: ["$", ""]
+  });
+
+  function defaultLocale$1(definition) {
+    locale$1 = formatLocale$1(definition);
+    format$1 = locale$1.format;
+    formatPrefix = locale$1.formatPrefix;
+    return locale$1;
+  }
+
+  function precisionFixed(step) {
+    return Math.max(0, -exponent(Math.abs(step)));
+  }
+
+  function precisionPrefix(step, value) {
+    return Math.max(0, Math.max(-8, Math.min(8, Math.floor(exponent(value) / 3))) * 3 - exponent(Math.abs(step)));
+  }
+
+  function precisionRound(step, max) {
+    step = Math.abs(step), max = Math.abs(max) - step;
+    return Math.max(0, exponent(max) - exponent(step)) + 1;
+  }
+
+  const formatCache = {};
+
+  function formatter(type, method, specifier) {
+    let k = type + ':' + specifier,
+        e = formatCache[k];
+    if (!e || e[0] !== method) {
+      formatCache[k] = (e = [method, method(specifier)]);
+    }
+    return e[1];
+  }
+
+  function format$2(_, specifier) {
+    return formatter('format', format$1, specifier)(_);
+  }
+
+  function timeFormat$1(_, specifier) {
+    return formatter('timeFormat', timeFormat, specifier)(_);
+  }
+
+  function utcFormat$1(_, specifier) {
+    return formatter('utcFormat', utcFormat, specifier)(_);
+  }
+
+  function timeParse$1(_, specifier) {
+    return formatter('timeParse', timeParse, specifier)(_);
+  }
+
+  function utcParse$1(_, specifier) {
+    return formatter('utcParse', utcParse, specifier)(_);
+  }
+
+  var dateObj = new Date(2000, 0, 1);
+
+  function time(month, day, specifier) {
+    dateObj.setMonth(month);
+    dateObj.setDate(day);
+    return timeFormat$1(dateObj, specifier);
+  }
+
+  function monthFormat(month) {
+    return time(month, 1, '%B');
+  }
+
+  function monthAbbrevFormat(month) {
+    return time(month, 1, '%b');
+  }
+
+  function dayFormat(day) {
+    return time(0, 2 + day, '%A');
+  }
+
+  function dayAbbrevFormat(day) {
+    return time(0, 2 + day, '%a');
+  }
+
+  function bandSpace(count, paddingInner, paddingOuter) {
+    var space = count - paddingInner + paddingOuter * 2;
+    return count ? (space > 0 ? space : 1) : 0;
+  }
+
+  const Identity = 'identity';
+
+  const Linear$1 = 'linear';
+  const Log = 'log';
+  const Pow = 'pow';
+  const Sqrt = 'sqrt';
+  const Symlog = 'symlog';
+
+  const Time = 'time';
+  const UTC = 'utc';
+
+  const Sequential = 'sequential';
+  const Diverging = 'diverging';
+
+  const Quantile = 'quantile';
+  const Quantize = 'quantize';
+  const Threshold = 'threshold';
+
+  const Ordinal = 'ordinal';
+  const Point = 'point';
+  const Band = 'band';
+  const BinOrdinal = 'bin-ordinal';
+
+  function isValidScaleType(type) {
+    switch (type) {
+      case Identity:
+      case Linear$1:
+      case Log:
+      case Pow:
+      case Sqrt:
+      case Symlog:
+      case Time:
+      case UTC:
+      case Sequential:
+      case Quantile:
+      case Quantize:
+      case Threshold:
+      case Ordinal:
+      case Point:
+      case Band:
+      case BinOrdinal:
+        return true;
+    }
+    return false;
+  }
+
+  function isQuantile(key) {
+    return key === Quantile;
+  }
+
+  function isSequential(key) {
+    return key && key.startsWith(Sequential);
+  }
+
+  function isDiverging(key) {
+    return key && key.startsWith(Diverging);
+  }
+
+  function isInterpolating(key) {
+    return isSequential(key) || isDiverging(key);
+  }
+
+  function isLogarithmic(key) {
+    return key === Log || key.endsWith('-log');
+  }
+
+  function isContinuous(key) {
+    switch (key) {
+      case Linear$1:
+      case Log:
+      case Pow:
+      case Sqrt:
+      case Symlog:
+      case Time:
+      case UTC:
+      case Sequential:
+        return true;
+    }
+    return false;
+  }
+
+  function isDiscrete(key) {
+    return key === BinOrdinal
+      || key === Ordinal
+      || key === Band
+      || key === Point;
+  }
+
+  function isDiscretizing(key) {
+    return key === BinOrdinal
+      || key === Quantile
+      || key === Quantize
+      || key === Threshold;
+  }
+
+  var time$1 = {
+    millisecond: millisecond,
+    second:      second,
+    minute:      minute,
+    hour:        hour,
+    day:         day,
+    week:        sunday,
+    month:       month,
+    year:        year
+  };
+
+  var utc = {
+    millisecond: millisecond,
+    second:      second,
+    minute:      utcMinute,
+    hour:        utcHour,
+    day:         utcDay,
+    week:        utcSunday,
+    month:       utcMonth,
+    year:        utcYear
+  };
+
+  function timeInterval(unit, type) {
+    const t = (type === UTC ? utc : time$1);
+    return t.hasOwnProperty(unit) && t[unit];
+  }
+
+  function invertRange(scale) {
+    return function(_) {
+      var lo = _[0],
+          hi = _[1],
+          t;
+
+      if (hi < lo) {
+        t = lo;
+        lo = hi;
+        hi = t;
+      }
+
+      return [
+        scale.invert(lo),
+        scale.invert(hi)
+      ];
+    }
+  }
+
+  function invertRangeExtent(scale) {
+    return function(_) {
+      var range = scale.range(),
+          lo = _[0],
+          hi = _[1],
+          min = -1, max, t, i, n;
+
+      if (hi < lo) {
+        t = lo;
+        lo = hi;
+        hi = t;
+      }
+
+      for (i=0, n=range.length; i<n; ++i) {
+        if (range[i] >= lo && range[i] <= hi) {
+          if (min < 0) min = i;
+          max = i;
+        }
+      }
+
+      if (min < 0) return undefined;
+
+      lo = scale.invertExtent(range[min]);
+      hi = scale.invertExtent(range[max]);
+
+      return [
+        lo[0] === undefined ? lo[1] : lo[0],
+        hi[1] === undefined ? hi[0] : hi[1]
+      ];
+    }
+  }
+
+  function initRange(domain, range) {
+    switch (arguments.length) {
+      case 0: break;
+      case 1: this.range(domain); break;
+      default: this.range(range).domain(domain); break;
+    }
+    return this;
+  }
+
+  function initInterpolator(domain, interpolator) {
+    switch (arguments.length) {
+      case 0: break;
+      case 1: this.interpolator(domain); break;
+      default: this.interpolator(interpolator).domain(domain); break;
+    }
+    return this;
+  }
+
+  const implicit = Symbol("implicit");
+
+  function ordinal() {
+    var index = new Map(),
+        domain = [],
+        range = [],
+        unknown = implicit;
+
+    function scale(d) {
+      var key = d + "", i = index.get(key);
+      if (!i) {
+        if (unknown !== implicit) return unknown;
+        index.set(key, i = domain.push(d));
+      }
+      return range[(i - 1) % range.length];
+    }
+
+    scale.domain = function(_) {
+      if (!arguments.length) return domain.slice();
+      domain = [], index = new Map();
+      for (const value of _) {
+        const key = value + "";
+        if (index.has(key)) continue;
+        index.set(key, domain.push(value));
+      }
+      return scale;
+    };
+
+    scale.range = function(_) {
+      return arguments.length ? (range = Array.from(_), scale) : range.slice();
+    };
+
+    scale.unknown = function(_) {
+      return arguments.length ? (unknown = _, scale) : unknown;
+    };
+
+    scale.copy = function() {
+      return ordinal(domain, range).unknown(unknown);
+    };
+
+    initRange.apply(scale, arguments);
+
+    return scale;
+  }
+
   function basis(t1, v0, v1, v2, v3) {
     var t2 = t1 * t1, t3 = t2 * t1;
     return ((1 - 3 * t1 + 3 * t2 - t3) * v0
@@ -17644,7 +17814,7 @@
     };
   }
 
-  function object$2(a, b) {
+  function object$1(a, b) {
     var i = {},
         c = {},
         k;
@@ -17737,7 +17907,7 @@
         : b instanceof color$1 ? rgb$1
         : b instanceof Date ? date
         : Array.isArray(b) ? array$1
-        : typeof b.valueOf !== "function" && typeof b.toString !== "function" || isNaN(b) ? object$2
+        : typeof b.valueOf !== "function" && typeof b.toString !== "function" || isNaN(b) ? object$1
         : interpolateNumber)(a, b);
   }
 
@@ -17764,7 +17934,7 @@
 
   var degrees = 180 / Math.PI;
 
-  var identity$2 = {
+  var identity$3 = {
     translateX: 0,
     translateY: 0,
     rotate: 0,
@@ -17795,7 +17965,7 @@
       svgNode;
 
   function parseCss(value) {
-    if (value === "none") return identity$2;
+    if (value === "none") return identity$3;
     if (!cssNode) cssNode = document.createElement("DIV"), cssRoot = document.documentElement, cssView = document.defaultView;
     cssNode.style.transform = value;
     value = cssView.getComputedStyle(cssRoot.appendChild(cssNode), null).getPropertyValue("transform");
@@ -17805,10 +17975,10 @@
   }
 
   function parseSvg(value) {
-    if (value == null) return identity$2;
+    if (value == null) return identity$3;
     if (!svgNode) svgNode = document.createElementNS("http://www.w3.org/2000/svg", "g");
     svgNode.setAttribute("transform", value);
-    if (!(value = svgNode.transform.baseVal.consolidate())) return identity$2;
+    if (!(value = svgNode.transform.baseVal.consolidate())) return identity$3;
     value = value.matrix;
     return decompose(value.a, value.b, value.c, value.d, value.e, value.f);
   }
@@ -18044,7 +18214,7 @@
     interpolateDiscrete: discrete,
     interpolateHue: hue$1,
     interpolateNumber: interpolateNumber,
-    interpolateObject: object$2,
+    interpolateObject: object$1,
     interpolateRound: interpolateRound,
     interpolateString: string,
     interpolateTransformCss: interpolateTransformCss,
@@ -18070,13 +18240,13 @@
     };
   }
 
-  function number$1(x) {
+  function number$2(x) {
     return +x;
   }
 
   var unit = [0, 1];
 
-  function identity$3(x) {
+  function identity$4(x) {
     return x;
   }
 
@@ -18140,7 +18310,7 @@
         transform,
         untransform,
         unknown,
-        clamp = identity$3,
+        clamp = identity$4,
         piecewise,
         output,
         input;
@@ -18160,7 +18330,7 @@
     };
 
     scale.domain = function(_) {
-      return arguments.length ? (domain = Array.from(_, number$1), clamp === identity$3 || (clamp = clamper(domain)), rescale()) : domain.slice();
+      return arguments.length ? (domain = Array.from(_, number$2), clamp === identity$4 || (clamp = clamper(domain)), rescale()) : domain.slice();
     };
 
     scale.range = function(_) {
@@ -18172,7 +18342,7 @@
     };
 
     scale.clamp = function(_) {
-      return arguments.length ? (clamp = _ ? clamper(domain) : identity$3, scale) : clamp !== identity$3;
+      return arguments.length ? (clamp = _ ? clamper(domain) : identity$4, scale) : clamp !== identity$4;
     };
 
     scale.interpolate = function(_) {
@@ -18191,311 +18361,6 @@
 
   function continuous(transform, untransform) {
     return transformer()(transform, untransform);
-  }
-
-  // Computes the decimal coefficient and exponent of the specified number x with
-  // significant digits p, where x is positive and p is in [1, 21] or undefined.
-  // For example, formatDecimal(1.23) returns ["123", 0].
-  function formatDecimal(x, p) {
-    if ((i = (x = p ? x.toExponential(p - 1) : x.toExponential()).indexOf("e")) < 0) return null; // NaN, ±Infinity
-    var i, coefficient = x.slice(0, i);
-
-    // The string returned by toExponential either has the form \d\.\d+e[-+]\d+
-    // (e.g., 1.2e+3) or the form \de[-+]\d+ (e.g., 1e+3).
-    return [
-      coefficient.length > 1 ? coefficient[0] + coefficient.slice(2) : coefficient,
-      +x.slice(i + 1)
-    ];
-  }
-
-  function exponent(x) {
-    return x = formatDecimal(Math.abs(x)), x ? x[1] : NaN;
-  }
-
-  function formatGroup(grouping, thousands) {
-    return function(value, width) {
-      var i = value.length,
-          t = [],
-          j = 0,
-          g = grouping[0],
-          length = 0;
-
-      while (i > 0 && g > 0) {
-        if (length + g + 1 > width) g = Math.max(1, width - length);
-        t.push(value.substring(i -= g, i + g));
-        if ((length += g + 1) > width) break;
-        g = grouping[j = (j + 1) % grouping.length];
-      }
-
-      return t.reverse().join(thousands);
-    };
-  }
-
-  function formatNumerals(numerals) {
-    return function(value) {
-      return value.replace(/[0-9]/g, function(i) {
-        return numerals[+i];
-      });
-    };
-  }
-
-  // [[fill]align][sign][symbol][0][width][,][.precision][~][type]
-  var re = /^(?:(.)?([<>=^]))?([+\-( ])?([$#])?(0)?(\d+)?(,)?(\.\d+)?(~)?([a-z%])?$/i;
-
-  function formatSpecifier(specifier) {
-    return new FormatSpecifier(specifier);
-  }
-
-  formatSpecifier.prototype = FormatSpecifier.prototype; // instanceof
-
-  function FormatSpecifier(specifier) {
-    if (!(match = re.exec(specifier))) throw new Error("invalid format: " + specifier);
-    var match;
-    this.fill = match[1] || " ";
-    this.align = match[2] || ">";
-    this.sign = match[3] || "-";
-    this.symbol = match[4] || "";
-    this.zero = !!match[5];
-    this.width = match[6] && +match[6];
-    this.comma = !!match[7];
-    this.precision = match[8] && +match[8].slice(1);
-    this.trim = !!match[9];
-    this.type = match[10] || "";
-  }
-
-  FormatSpecifier.prototype.toString = function() {
-    return this.fill
-        + this.align
-        + this.sign
-        + this.symbol
-        + (this.zero ? "0" : "")
-        + (this.width == null ? "" : Math.max(1, this.width | 0))
-        + (this.comma ? "," : "")
-        + (this.precision == null ? "" : "." + Math.max(0, this.precision | 0))
-        + (this.trim ? "~" : "")
-        + this.type;
-  };
-
-  // Trims insignificant zeros, e.g., replaces 1.2000k with 1.2k.
-  function formatTrim(s) {
-    out: for (var n = s.length, i = 1, i0 = -1, i1; i < n; ++i) {
-      switch (s[i]) {
-        case ".": i0 = i1 = i; break;
-        case "0": if (i0 === 0) i0 = i; i1 = i; break;
-        default: if (i0 > 0) { if (!+s[i]) break out; i0 = 0; } break;
-      }
-    }
-    return i0 > 0 ? s.slice(0, i0) + s.slice(i1 + 1) : s;
-  }
-
-  var prefixExponent;
-
-  function formatPrefixAuto(x, p) {
-    var d = formatDecimal(x, p);
-    if (!d) return x + "";
-    var coefficient = d[0],
-        exponent = d[1],
-        i = exponent - (prefixExponent = Math.max(-8, Math.min(8, Math.floor(exponent / 3))) * 3) + 1,
-        n = coefficient.length;
-    return i === n ? coefficient
-        : i > n ? coefficient + new Array(i - n + 1).join("0")
-        : i > 0 ? coefficient.slice(0, i) + "." + coefficient.slice(i)
-        : "0." + new Array(1 - i).join("0") + formatDecimal(x, Math.max(0, p + i - 1))[0]; // less than 1y!
-  }
-
-  function formatRounded(x, p) {
-    var d = formatDecimal(x, p);
-    if (!d) return x + "";
-    var coefficient = d[0],
-        exponent = d[1];
-    return exponent < 0 ? "0." + new Array(-exponent).join("0") + coefficient
-        : coefficient.length > exponent + 1 ? coefficient.slice(0, exponent + 1) + "." + coefficient.slice(exponent + 1)
-        : coefficient + new Array(exponent - coefficient.length + 2).join("0");
-  }
-
-  var formatTypes = {
-    "%": function(x, p) { return (x * 100).toFixed(p); },
-    "b": function(x) { return Math.round(x).toString(2); },
-    "c": function(x) { return x + ""; },
-    "d": function(x) { return Math.round(x).toString(10); },
-    "e": function(x, p) { return x.toExponential(p); },
-    "f": function(x, p) { return x.toFixed(p); },
-    "g": function(x, p) { return x.toPrecision(p); },
-    "o": function(x) { return Math.round(x).toString(8); },
-    "p": function(x, p) { return formatRounded(x * 100, p); },
-    "r": formatRounded,
-    "s": formatPrefixAuto,
-    "X": function(x) { return Math.round(x).toString(16).toUpperCase(); },
-    "x": function(x) { return Math.round(x).toString(16); }
-  };
-
-  function identity$4(x) {
-    return x;
-  }
-
-  var prefixes = ["y","z","a","f","p","n","µ","m","","k","M","G","T","P","E","Z","Y"];
-
-  function formatLocale$1(locale) {
-    var group = locale.grouping && locale.thousands ? formatGroup(locale.grouping, locale.thousands) : identity$4,
-        currency = locale.currency,
-        decimal = locale.decimal,
-        numerals = locale.numerals ? formatNumerals(locale.numerals) : identity$4,
-        percent = locale.percent || "%";
-
-    function newFormat(specifier) {
-      specifier = formatSpecifier(specifier);
-
-      var fill = specifier.fill,
-          align = specifier.align,
-          sign = specifier.sign,
-          symbol = specifier.symbol,
-          zero = specifier.zero,
-          width = specifier.width,
-          comma = specifier.comma,
-          precision = specifier.precision,
-          trim = specifier.trim,
-          type = specifier.type;
-
-      // The "n" type is an alias for ",g".
-      if (type === "n") comma = true, type = "g";
-
-      // The "" type, and any invalid type, is an alias for ".12~g".
-      else if (!formatTypes[type]) precision == null && (precision = 12), trim = true, type = "g";
-
-      // If zero fill is specified, padding goes after sign and before digits.
-      if (zero || (fill === "0" && align === "=")) zero = true, fill = "0", align = "=";
-
-      // Compute the prefix and suffix.
-      // For SI-prefix, the suffix is lazily computed.
-      var prefix = symbol === "$" ? currency[0] : symbol === "#" && /[boxX]/.test(type) ? "0" + type.toLowerCase() : "",
-          suffix = symbol === "$" ? currency[1] : /[%p]/.test(type) ? percent : "";
-
-      // What format function should we use?
-      // Is this an integer type?
-      // Can this type generate exponential notation?
-      var formatType = formatTypes[type],
-          maybeSuffix = /[defgprs%]/.test(type);
-
-      // Set the default precision if not specified,
-      // or clamp the specified precision to the supported range.
-      // For significant precision, it must be in [1, 21].
-      // For fixed precision, it must be in [0, 20].
-      precision = precision == null ? 6
-          : /[gprs]/.test(type) ? Math.max(1, Math.min(21, precision))
-          : Math.max(0, Math.min(20, precision));
-
-      function format(value) {
-        var valuePrefix = prefix,
-            valueSuffix = suffix,
-            i, n, c;
-
-        if (type === "c") {
-          valueSuffix = formatType(value) + valueSuffix;
-          value = "";
-        } else {
-          value = +value;
-
-          // Perform the initial formatting.
-          var valueNegative = value < 0;
-          value = formatType(Math.abs(value), precision);
-
-          // Trim insignificant zeros.
-          if (trim) value = formatTrim(value);
-
-          // If a negative value rounds to zero during formatting, treat as positive.
-          if (valueNegative && +value === 0) valueNegative = false;
-
-          // Compute the prefix and suffix.
-          valuePrefix = (valueNegative ? (sign === "(" ? sign : "-") : sign === "-" || sign === "(" ? "" : sign) + valuePrefix;
-          valueSuffix = (type === "s" ? prefixes[8 + prefixExponent / 3] : "") + valueSuffix + (valueNegative && sign === "(" ? ")" : "");
-
-          // Break the formatted value into the integer “value” part that can be
-          // grouped, and fractional or exponential “suffix” part that is not.
-          if (maybeSuffix) {
-            i = -1, n = value.length;
-            while (++i < n) {
-              if (c = value.charCodeAt(i), 48 > c || c > 57) {
-                valueSuffix = (c === 46 ? decimal + value.slice(i + 1) : value.slice(i)) + valueSuffix;
-                value = value.slice(0, i);
-                break;
-              }
-            }
-          }
-        }
-
-        // If the fill character is not "0", grouping is applied before padding.
-        if (comma && !zero) value = group(value, Infinity);
-
-        // Compute the padding.
-        var length = valuePrefix.length + value.length + valueSuffix.length,
-            padding = length < width ? new Array(width - length + 1).join(fill) : "";
-
-        // If the fill character is "0", grouping is applied after padding.
-        if (comma && zero) value = group(padding + value, padding.length ? width - valueSuffix.length : Infinity), padding = "";
-
-        // Reconstruct the final output based on the desired alignment.
-        switch (align) {
-          case "<": value = valuePrefix + value + valueSuffix + padding; break;
-          case "=": value = valuePrefix + padding + value + valueSuffix; break;
-          case "^": value = padding.slice(0, length = padding.length >> 1) + valuePrefix + value + valueSuffix + padding.slice(length); break;
-          default: value = padding + valuePrefix + value + valueSuffix; break;
-        }
-
-        return numerals(value);
-      }
-
-      format.toString = function() {
-        return specifier + "";
-      };
-
-      return format;
-    }
-
-    function formatPrefix(specifier, value) {
-      var f = newFormat((specifier = formatSpecifier(specifier), specifier.type = "f", specifier)),
-          e = Math.max(-8, Math.min(8, Math.floor(exponent(value) / 3))) * 3,
-          k = Math.pow(10, -e),
-          prefix = prefixes[8 + e / 3];
-      return function(value) {
-        return f(k * value) + prefix;
-      };
-    }
-
-    return {
-      format: newFormat,
-      formatPrefix: formatPrefix
-    };
-  }
-
-  var locale$1;
-  var format$1;
-  var formatPrefix;
-
-  defaultLocale$1({
-    decimal: ".",
-    thousands: ",",
-    grouping: [3],
-    currency: ["$", ""]
-  });
-
-  function defaultLocale$1(definition) {
-    locale$1 = formatLocale$1(definition);
-    format$1 = locale$1.format;
-    formatPrefix = locale$1.formatPrefix;
-    return locale$1;
-  }
-
-  function precisionFixed(step) {
-    return Math.max(0, -exponent(Math.abs(step)));
-  }
-
-  function precisionPrefix(step, value) {
-    return Math.max(0, Math.max(-8, Math.min(8, Math.floor(exponent(value) / 3))) * 3 - exponent(Math.abs(step)));
-  }
-
-  function precisionRound(step, max) {
-    step = Math.abs(step), max = Math.abs(max) - step;
-    return Math.max(0, exponent(max) - exponent(step)) + 1;
   }
 
   function spanFormat(start, stop, count, specifier) {
@@ -18582,7 +18447,7 @@
   }
 
   function linear$1() {
-    var scale = continuous(identity$3, identity$3);
+    var scale = continuous(identity$4, identity$4);
 
     scale.copy = function() {
       return copy(scale, linear$1());
@@ -18603,7 +18468,7 @@
     scale.invert = scale;
 
     scale.domain = scale.range = function(_) {
-      return arguments.length ? (domain = Array.from(_, number$1), scale) : domain.slice();
+      return arguments.length ? (domain = Array.from(_, number$2), scale) : domain.slice();
     };
 
     scale.unknown = function(_) {
@@ -18614,7 +18479,7 @@
       return identity$5(domain).unknown(unknown);
     };
 
-    domain = arguments.length ? Array.from(domain, number$1) : [0, 1];
+    domain = arguments.length ? Array.from(domain, number$2) : [0, 1];
 
     return linearish(scale);
   }
@@ -18825,11 +18690,11 @@
   }
 
   function powish(transform) {
-    var scale = transform(identity$3, identity$3),
+    var scale = transform(identity$4, identity$4),
         exponent = 1;
 
     function rescale() {
-      return exponent === 1 ? transform(identity$3, identity$3)
+      return exponent === 1 ? transform(identity$4, identity$4)
           : exponent === 0.5 ? transform(transformSqrt, transformSquare)
           : transform(transformPow(exponent), transformPow(1 / exponent));
     }
@@ -19014,12 +18879,12 @@
     return new Date(t);
   }
 
-  function number$2(t) {
+  function number$3(t) {
     return t instanceof Date ? +t : +new Date(+t);
   }
 
   function calendar(year, month, week, day, hour, minute, second, millisecond, format) {
-    var scale = continuous(identity$3, identity$3),
+    var scale = continuous(identity$4, identity$4),
         invert = scale.invert,
         domain = scale.domain;
 
@@ -19095,7 +18960,7 @@
     };
 
     scale.domain = function(_) {
-      return arguments.length ? domain(Array.from(_, number$2)) : domain().map(date$1);
+      return arguments.length ? domain(Array.from(_, number$3)) : domain().map(date$1);
     };
 
     scale.ticks = function(interval) {
@@ -19128,7 +18993,7 @@
     return scale;
   }
 
-  function time$1() {
+  function time$2() {
     return initRange.apply(calendar(year, month, sunday, day, hour, minute, second, millisecond, timeFormat).domain([new Date(2000, 0, 1), new Date(2000, 0, 2)]), arguments);
   }
 
@@ -19143,7 +19008,7 @@
         t1,
         k10,
         transform,
-        interpolator = identity$3,
+        interpolator = identity$4,
         clamp = false,
         unknown;
 
@@ -19182,7 +19047,7 @@
   }
 
   function sequential() {
-    var scale = linearish(transformer$1()(identity$3));
+    var scale = linearish(transformer$1()(identity$4));
 
     scale.copy = function() {
       return copy$1(scale, sequential());
@@ -19234,7 +19099,7 @@
         t2,
         k10,
         k21,
-        interpolator = identity$3,
+        interpolator = identity$4,
         transform,
         clamp = false,
         unknown;
@@ -19266,7 +19131,7 @@
   }
 
   function diverging() {
-    var scale = linearish(transformer$2()(identity$3));
+    var scale = linearish(transformer$2()(identity$4));
 
     scale.copy = function() {
       return copy$1(scale, diverging());
@@ -19578,7 +19443,7 @@
     [Pow]:           pow$1,
     [Sqrt]:          sqrt$1,
     [Symlog]:        symlog$1,
-    [Time]:          time$1,
+    [Time]:          time$2,
     [UTC]:           utcTime,
 
     // sequential scales
@@ -19762,2054 +19627,48 @@
     }
   }
 
-  /**
-   * Determine the tick count or interval function.
-   * @param {Scale} scale - The scale for which to generate tick values.
-   * @param {*} count - The desired tick count or interval specifier.
-   * @param {number} minStep - The desired minimum step between tick values.
-   * @return {*} - The tick count or interval function.
-   */
-  function tickCount(scale, count, minStep) {
-    var step;
-
-    if (isNumber(count) && minStep != null) {
-      count = Math.min(count, ~~(span(scale.domain()) / minStep) || 1);
-    }
-
-    if (isObject(count)) {
-      step = count.step;
-      count = count.interval;
-    }
-
-    if (isString(count)) {
-      count = timeInterval(count, scale.type)
-            || error('Only time and utc scales accept interval strings.');
-      if (step) count = count.every(step);
-    }
-
-    return count;
-  }
-
-  /**
-   * Filter a set of candidate tick values, ensuring that only tick values
-   * that lie within the scale range are included.
-   * @param {Scale} scale - The scale for which to generate tick values.
-   * @param {Array<*>} ticks - The candidate tick values.
-   * @param {*} count - The tick count or interval function.
-   * @return {Array<*>} - The filtered tick values.
-   */
-  function validTicks(scale, ticks, count) {
-    var range = scale.range(),
-        lo = Math.floor(range[0]),
-        hi = Math.ceil(peek(range));
-
-    if (lo > hi) {
-      range = hi;
-      hi = lo;
-      lo = range;
-    }
-
-    ticks = ticks.filter(function(v) {
-      v = scale(v);
-      return lo <= v && v <= hi;
-    });
-
-    if (count > 0 && ticks.length > 1) {
-      var endpoints = [ticks[0], peek(ticks)];
-      while (ticks.length > count && ticks.length >= 3) {
-        ticks = ticks.filter(function(_, i) { return !(i % 2); });
-      }
-      if (ticks.length < 3) {
-        ticks = endpoints;
-      }
-    }
-
-    return ticks;
-  }
-
-  /**
-   * Generate tick values for the given scale and approximate tick count or
-   * interval value. If the scale has a 'ticks' method, it will be used to
-   * generate the ticks, with the count argument passed as a parameter. If the
-   * scale lacks a 'ticks' method, the full scale domain will be returned.
-   * @param {Scale} scale - The scale for which to generate tick values.
-   * @param {*} [count] - The approximate number of desired ticks.
-   * @return {Array<*>} - The generated tick values.
-   */
-  function tickValues(scale, count) {
-    return scale.bins ? validTicks(scale, binValues(scale.bins, count))
-      : scale.ticks ? scale.ticks(count)
-      : scale.domain();
-  }
-
-  /**
-   * Generate tick values for an array of bin values.
-   * @param {Array<*>} bins - An array of bin boundaries.
-   * @param {Number} [count] - The approximate number of desired ticks.
-   * @return {Array<*>} - The generated tick values.
-   */
-  function binValues(bins, count) {
-    var n = bins.length,
-        stride = ~~(n / (count || n));
-
-    return stride < 2
-      ? bins.slice()
-      : bins.filter(function(x, i) { return !(i % stride); });
-  }
-
-  /**
-   * Generate a label format function for a scale. If the scale has a
-   * 'tickFormat' method, it will be used to generate the formatter, with the
-   * count and specifier arguments passed as parameters. If the scale lacks a
-   * 'tickFormat' method, the returned formatter performs simple string coercion.
-   * If the input scale is a logarithmic scale and the format specifier does not
-   * indicate a desired decimal precision, a special variable precision formatter
-   * that automatically trims trailing zeroes will be generated.
-   * @param {Scale} scale - The scale for which to generate the label formatter.
-   * @param {*} [count] - The approximate number of desired ticks.
-   * @param {string} [specifier] - The format specifier. Must be a legal d3
-   *   specifier string (see https://github.com/d3/d3-format#formatSpecifier).
-   * @return {function(*):string} - The generated label formatter.
-   */
-  function tickFormat(scale, count, specifier, formatType) {
-    var format = scale.tickFormat ? scale.tickFormat(count, specifier)
-      : specifier && formatType === Time ? timeFormat(specifier)
-      : specifier ? format$1(specifier)
-      : String;
-
-    if (isLogarithmic(scale.type)) {
-      var logfmt = variablePrecision(specifier);
-      format = scale.bins ? logfmt : filter$1(format, logfmt);
-    }
-
-    return format;
-  }
-
-  function filter$1(sourceFormat, targetFormat) {
-    return function(_) {
-      return sourceFormat(_) ? targetFormat(_) : '';
-    };
-  }
-
-  function variablePrecision(specifier) {
-    var s = formatSpecifier(specifier || ',');
-
-    if (s.precision == null) {
-      s.precision = 12;
-      switch (s.type) {
-        case '%': s.precision -= 2; break;
-        case 'e': s.precision -= 1; break;
-      }
-      return trimZeroes(
-        format$1(s),          // number format
-        format$1('.1f')(1)[1] // decimal point character
-      );
-    } else {
-      return format$1(s);
-    }
-  }
-
-  function trimZeroes(format, decimalChar) {
-    return function(x) {
-      var str = format(x),
-          dec = str.indexOf(decimalChar),
-          idx, end;
-
-      if (dec < 0) return str;
-
-      idx = rightmostDigit(str, dec);
-      end = idx < str.length ? str.slice(idx) : '';
-      while (--idx > dec) if (str[idx] !== '0') { ++idx; break; }
-
-      return str.slice(0, idx) + end;
-    };
-  }
-
-  function rightmostDigit(str, dec) {
-    var i = str.lastIndexOf('e'), c;
-    if (i > 0) return i;
-    for (i=str.length; --i > dec;) {
-      c = str.charCodeAt(i);
-      if (c >= 48 && c <= 57) return i + 1; // is digit
-    }
-  }
-
-  /**
-   * Generates axis ticks for visualizing a spatial scale.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {Scale} params.scale - The scale to generate ticks for.
-   * @param {*} [params.count=10] - The approximate number of ticks, or
-   *   desired tick interval, to use.
-   * @param {Array<*>} [params.values] - The exact tick values to use.
-   *   These must be legal domain values for the provided scale.
-   *   If provided, the count argument is ignored.
-   * @param {function(*):string} [params.formatSpecifier] - A format specifier
-   *   to use in conjunction with scale.tickFormat. Legal values are
-   *   any valid d3 4.0 format specifier.
-   * @param {function(*):string} [params.format] - The format function to use.
-   *   If provided, the formatSpecifier argument is ignored.
-   */
-  function AxisTicks(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$T = inherits(AxisTicks, Transform);
-
-  prototype$T.transform = function (_, pulse) {
-    if (this.value && !_.modified()) {
-      return pulse.StopPropagation;
-    }
-
-    var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
-      ticks = this.value,
-      scale = _.scale,
-      tally = _.count == null ? (_.values ? _.values.length : 10) : _.count,
-      count = tickCount(scale, tally, _.minstep),
-      format = _.format || tickFormat(scale, count, _.formatSpecifier, _.formatType),
-      values = _.values ? validTicks(scale, _.values, count) : tickValues(scale, count);
-
-    if (ticks) out.rem = ticks;
-    console.log(scale);
-
-    ticks = values.map(function (value, i) {
-      return ingest({
-        index: i / (values.length - 1 || 1),
-        value: value,
-        label: format(value)
-      });
-    });
-
-    if (_.extra && ticks.length) {
-      // add an extra tick pegged to the initial domain value
-      // this is used to generate axes with 'binned' domains
-      ticks.push(ingest({
-        index: -1,
-        extra: { value: ticks[0].value },
-        label: ''
-      }));
-    }
-
-    out.source = ticks;
-    out.add = ticks;
-    this.value = ticks;
-
-    return out;
-  };
-
-  /**
-   * Joins a set of data elements against a set of visual items.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {function(object): object} [params.item] - An item generator function.
-   * @param {function(object): *} [params.key] - The key field associating data and visual items.
-   */
-  function DataJoin(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$U = inherits(DataJoin, Transform);
-
-  function defaultItemCreate() {
-    return ingest({});
-  }
-
-  function isExit(t) {
-    return t.exit;
-  }
-
-  prototype$U.transform = function(_, pulse) {
-    var df = pulse.dataflow,
-        out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
-        item = _.item || defaultItemCreate,
-        key = _.key || tupleid,
-        map = this.value;
-
-    // prevent transient (e.g., hover) requests from
-    // cascading across marks derived from marks
-    if (isArray(out.encode)) {
-      out.encode = null;
-    }
-
-    if (map && (_.modified('key') || pulse.modified(key))) {
-      error('DataJoin does not support modified key function or fields.');
-    }
-
-    if (!map) {
-      pulse = pulse.addAll();
-      this.value = map = fastmap().test(isExit);
-      map.lookup = function(t) { return map.get(key(t)); };
-    }
-
-    pulse.visit(pulse.ADD, function(t) {
-      var k = key(t),
-          x = map.get(k);
-
-      if (x) {
-        if (x.exit) {
-          map.empty--;
-          out.add.push(x);
-        } else {
-          out.mod.push(x);
-        }
-      } else {
-        map.set(k, (x = item(t)));
-        out.add.push(x);
-      }
-
-      x.datum = t;
-      x.exit = false;
-    });
-
-    pulse.visit(pulse.MOD, function(t) {
-      var k = key(t),
-          x = map.get(k);
-
-      if (x) {
-        x.datum = t;
-        out.mod.push(x);
-      }
-    });
-
-    pulse.visit(pulse.REM, function(t) {
-      var k = key(t),
-          x = map.get(k);
-
-      if (t === x.datum && !x.exit) {
-        out.rem.push(x);
-        x.exit = true;
-        ++map.empty;
-      }
-    });
-
-    if (pulse.changed(pulse.ADD_MOD)) out.modifies('datum');
-
-    if (_.clean && map.empty > df.cleanThreshold) df.runAfter(map.clean);
-
-    return out;
-  };
-
-  /**
-   * Invokes encoding functions for visual items.
-   * @constructor
-   * @param {object} params - The parameters to the encoding functions. This
-   *   parameter object will be passed through to all invoked encoding functions.
-   * @param {object} [params.mod=false] - Flag indicating if tuples in the input
-   *   mod set that are unmodified by encoders should be included in the output.
-   * @param {object} param.encoders - The encoding functions
-   * @param {function(object, object): boolean} [param.encoders.update] - Update encoding set
-   * @param {function(object, object): boolean} [param.encoders.enter] - Enter encoding set
-   * @param {function(object, object): boolean} [param.encoders.exit] - Exit encoding set
-   */
-  function Encode(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$V = inherits(Encode, Transform);
-
-  prototype$V.transform = function(_, pulse) {
-    var out = pulse.fork(pulse.ADD_REM),
-        fmod = _.mod || false,
-        encoders = _.encoders,
-        encode = pulse.encode;
-
-    // if an array, the encode directive includes additional sets
-    // that must be defined in order for the primary set to be invoked
-    // e.g., only run the update set if the hover set is defined
-    if (isArray(encode)) {
-      if (out.changed() || encode.every(function(e) { return encoders[e]; })) {
-        encode = encode[0];
-        out.encode = null; // consume targeted encode directive
-      } else {
-        return pulse.StopPropagation;
-      }
-    }
-
-    // marshall encoder functions
-    var reenter = encode === 'enter',
-        update = encoders.update || falsy,
-        enter = encoders.enter || falsy,
-        exit = encoders.exit || falsy,
-        set = (encode && !reenter ? encoders[encode] : update) || falsy;
-
-    if (pulse.changed(pulse.ADD)) {
-      pulse.visit(pulse.ADD, function(t) { enter(t, _); update(t, _); });
-      out.modifies(enter.output);
-      out.modifies(update.output);
-      if (set !== falsy && set !== update) {
-        pulse.visit(pulse.ADD, function(t) { set(t, _); });
-        out.modifies(set.output);
-      }
-    }
-
-    if (pulse.changed(pulse.REM) && exit !== falsy) {
-      pulse.visit(pulse.REM, function(t) { exit(t, _); });
-      out.modifies(exit.output);
-    }
-
-    if (reenter || set !== falsy) {
-      var flag = pulse.MOD | (_.modified() ? pulse.REFLOW : 0);
-      if (reenter) {
-        pulse.visit(flag, function(t) {
-          var mod = enter(t, _) || fmod;
-          if (set(t, _) || mod) out.mod.push(t);
-        });
-        if (out.mod.length) out.modifies(enter.output);
-      } else {
-        pulse.visit(flag, function(t) {
-          if (set(t, _) || fmod) out.mod.push(t);
-        });
-      }
-      if (out.mod.length) out.modifies(set.output);
-    }
-
-    return out.changed() ? out : pulse.StopPropagation;
-  };
-
-  var Symbols$1  = 'symbol';
-  var Discrete = 'discrete';
-  var Gradient$1 = 'gradient';
-
-  const symbols$1 = {
-    [Quantile]:  'quantiles',
-    [Quantize]:  'thresholds',
-    [Threshold]: 'domain'
-  };
-
-  const formats$1 = {
-    [Quantile]:  'quantiles',
-    [Quantize]:  'domain'
-  };
-
-  function labelValues(scale, count) {
-    return scale.bins ? binValues$1(scale.bins)
-      : symbols$1[scale.type] ? thresholdValues(scale[symbols$1[scale.type]]())
-      : tickValues(scale, count);
-  }
-
-  function thresholdFormat(scale, specifier) {
-    var _ = scale[formats$1[scale.type]](),
-        n = _.length,
-        d = n > 1 ? _[1] - _[0] : _[0], i;
-
-    for (i=1; i<n; ++i) {
-      d = Math.min(d, _[i] - _[i-1]);
-    }
-
-    // 3 ticks times 10 for increased resolution
-    return spanFormat(0, d, 3 * 10, specifier);
-  }
-
-  function thresholdValues(thresholds) {
-    const values = [-Infinity].concat(thresholds);
-    values.max = +Infinity;
-
-    return values;
-  }
-
-  function binValues$1(bins) {
-    const values = bins.slice(0, -1);
-    values.max = peek(bins);
-
-    return values;
-  }
-
-  function isDiscreteRange(scale) {
-    return symbols$1[scale.type] || scale.bins;
-  }
-
-  function labelFormat(scale, count, type, specifier, formatType) {
-    const format = formats$1[scale.type] && formatType !== Time
-      ? thresholdFormat(scale, specifier)
-      : tickFormat(scale, count, specifier, formatType);
-
-    return type === Symbols$1 && isDiscreteRange(scale) ? formatRange(format)
-      : type === Discrete ? formatDiscrete(format)
-      : formatPoint(format);
-  }
-
-  function formatRange(format) {
-    return function(value, index, array) {
-      var limit = array[index + 1] || array.max || +Infinity,
-          lo = formatValue(value, format),
-          hi = formatValue(limit, format);
-      return lo && hi ? lo + '\u2013' + hi : hi ? '< ' + hi : '\u2265 ' + lo;
-    };
-  }
-
-  function formatDiscrete(format) {
-    return function(value, index) {
-      return index ? format(value) : null;
-    }
-  }
-
-  function formatPoint(format) {
-    return function(value) {
-      return format(value);
-    };
-  }
-
-  function formatValue(value, format) {
-    return isFinite(value) ? format(value) : null;
-  }
-
-  function labelFraction(scale) {
-    var domain = scale.domain(),
-        count = domain.length - 1,
-        lo = +domain[0],
-        hi = +peek(domain),
-        span = hi - lo;
-
-    if (scale.type === Threshold) {
-      var adjust = count ? span / count : 0.1;
-      lo -= adjust;
-      hi += adjust;
-      span = hi - lo;
-    }
-
-    return function(value) {
-      return (value - lo) / span;
-    };
-  }
-
-  /**
-   * Generates legend entries for visualizing a scale.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {Scale} params.scale - The scale to generate items for.
-   * @param {*} [params.count=5] - The approximate number of items, or
-   *   desired tick interval, to use.
-   * @param {Array<*>} [params.values] - The exact tick values to use.
-   *   These must be legal domain values for the provided scale.
-   *   If provided, the count argument is ignored.
-   * @param {string} [params.formatSpecifier] - A format specifier
-   *   to use in conjunction with scale.tickFormat. Legal values are
-   *   any valid D3 format specifier string.
-   * @param {function(*):string} [params.format] - The format function to use.
-   *   If provided, the formatSpecifier argument is ignored.
-   */
-  function LegendEntries(params) {
-    Transform.call(this, [], params);
-  }
-
-  var prototype$W = inherits(LegendEntries, Transform);
-
-  prototype$W.transform = function(_, pulse) {
-    if (this.value != null && !_.modified()) {
-      return pulse.StopPropagation;
-    }
-
-    var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
-        items = this.value,
-        type  = _.type || Symbols$1,
-        scale = _.scale,
-        count = tickCount(scale, _.count == null ? 5 : _.count, _.minstep),
-        format = _.format || labelFormat(scale, count, type, _.formatSpecifier, _.formatType),
-        values = _.values || labelValues(scale, count),
-        domain, fraction, size, offset;
-
-    if (items) out.rem = items;
-
-    if (type === Symbols$1) {
-      if (isFunction(size = _.size)) {
-        // if first value maps to size zero, remove from list (vega#717)
-        if (!_.values && scale(values[0]) === 0) {
-          values = values.slice(1);
-        }
-        // compute size offset for legend entries
-        offset = values.reduce(function(max, value) {
-          return Math.max(max, size(value, _));
-        }, 0);
-      } else {
-        size = constant(offset = size || 8);
-      }
-
-      items = values.map(function(value, index) {
-        return ingest({
-          index:  index,
-          label:  format(value, index, values),
-          value:  value,
-          offset: offset,
-          size:   size(value, _)
-        });
-      });
-    }
-
-    else if (type === Gradient$1) {
-      domain = scale.domain(),
-      fraction = scaleFraction(scale, domain[0], peek(domain));
-
-      // if automatic label generation produces 2 or fewer values,
-      // use the domain end points instead (fixes vega/vega#1364)
-      if (values.length < 3 && !_.values && domain[0] !== peek(domain)) {
-        values = [domain[0], peek(domain)];
-      }
-
-      items = values.map(function(value, index) {
-        return ingest({
-          index: index,
-          label: format(value, index, values),
-          value: value,
-          perc:  fraction(value)
-        });
-      });
-    }
-
-    else {
-      size = values.length - 1;
-      fraction = labelFraction(scale);
-
-      items = values.map(function(value, index) {
-        return ingest({
-          index: index,
-          label: format(value, index, values),
-          value: value,
-          perc:  index ? fraction(value) : 0,
-          perc2: index === size ? 1 : fraction(values[index+1])
-        });
-      });
-    }
-
-    out.source = items;
-    out.add = items;
-    this.value = items;
-
-    return out;
-  };
-
-  var Paths = fastmap({
-    'line': line$2,
-    'line-radial': lineR,
-    'arc': arc$2,
-    'arc-radial': arcR,
-    'curve': curve,
-    'curve-radial': curveR,
-    'orthogonal-horizontal': orthoX,
-    'orthogonal-vertical': orthoY,
-    'orthogonal-radial': orthoR,
-    'diagonal-horizontal': diagonalX,
-    'diagonal-vertical': diagonalY,
-    'diagonal-radial': diagonalR
-  });
-
-  function sourceX(t) { return t.source.x; }
-  function sourceY(t) { return t.source.y; }
-  function targetX(t) { return t.target.x; }
-  function targetY(t) { return t.target.y; }
-
-   /**
-    * Layout paths linking source and target elements.
-    * @constructor
-    * @param {object} params - The parameters for this operator.
-    */
-  function LinkPath(params) {
-    Transform.call(this, {}, params);
-  }
-
-  LinkPath.Definition = {
-    "type": "LinkPath",
-    "metadata": {"modifies": true},
-    "params": [
-      { "name": "sourceX", "type": "field", "default": "source.x" },
-      { "name": "sourceY", "type": "field", "default": "source.y" },
-      { "name": "targetX", "type": "field", "default": "target.x" },
-      { "name": "targetY", "type": "field", "default": "target.y" },
-      { "name": "orient", "type": "enum", "default": "vertical",
-        "values": ["horizontal", "vertical", "radial"] },
-      { "name": "shape", "type": "enum", "default": "line",
-        "values": ["line", "arc", "curve", "diagonal", "orthogonal"] },
-      { "name": "require", "type": "signal" },
-      { "name": "as", "type": "string", "default": "path" }
-    ]
-  };
-
-  var prototype$X = inherits(LinkPath, Transform);
-
-  prototype$X.transform = function(_, pulse) {
-    var sx = _.sourceX || sourceX,
-        sy = _.sourceY || sourceY,
-        tx = _.targetX || targetX,
-        ty = _.targetY || targetY,
-        as = _.as || 'path',
-        orient = _.orient || 'vertical',
-        shape = _.shape || 'line',
-        path = Paths.get(shape + '-' + orient) || Paths.get(shape);
-
-    if (!path) {
-      error('LinkPath unsupported type: ' + _.shape
-        + (_.orient ? '-' + _.orient : ''));
-    }
-
-    pulse.visit(pulse.SOURCE, function(t) {
-      t[as] = path(sx(t), sy(t), tx(t), ty(t));
-    });
-
-    return pulse.reflow(_.modified()).modifies(as);
-  };
-
-  // -- Link Path Generation Methods -----
-
-  function line$2(sx, sy, tx, ty) {
-    return 'M' + sx + ',' + sy +
-           'L' + tx + ',' + ty;
-  }
-
-  function lineR(sa, sr, ta, tr) {
-    return line$2(
-      sr * Math.cos(sa), sr * Math.sin(sa),
-      tr * Math.cos(ta), tr * Math.sin(ta)
-    );
-  }
-
-  function arc$2(sx, sy, tx, ty) {
-    var dx = tx - sx,
-        dy = ty - sy,
-        rr = Math.sqrt(dx * dx + dy * dy) / 2,
-        ra = 180 * Math.atan2(dy, dx) / Math.PI;
-    return 'M' + sx + ',' + sy +
-           'A' + rr + ',' + rr +
-           ' ' + ra + ' 0 1' +
-           ' ' + tx + ',' + ty;
-  }
-
-  function arcR(sa, sr, ta, tr) {
-    return arc$2(
-      sr * Math.cos(sa), sr * Math.sin(sa),
-      tr * Math.cos(ta), tr * Math.sin(ta)
-    );
-  }
-
-  function curve(sx, sy, tx, ty) {
-    var dx = tx - sx,
-        dy = ty - sy,
-        ix = 0.2 * (dx + dy),
-        iy = 0.2 * (dy - dx);
-    return 'M' + sx + ',' + sy +
-           'C' + (sx+ix) + ',' + (sy+iy) +
-           ' ' + (tx+iy) + ',' + (ty-ix) +
-           ' ' + tx + ',' + ty;
-  }
-
-  function curveR(sa, sr, ta, tr) {
-    return curve(
-      sr * Math.cos(sa), sr * Math.sin(sa),
-      tr * Math.cos(ta), tr * Math.sin(ta)
-    );
-  }
-
-  function orthoX(sx, sy, tx, ty) {
-    return 'M' + sx + ',' + sy +
-           'V' + ty + 'H' + tx;
-  }
-
-  function orthoY(sx, sy, tx, ty) {
-    return 'M' + sx + ',' + sy +
-           'H' + tx + 'V' + ty;
-  }
-
-  function orthoR(sa, sr, ta, tr) {
-    var sc = Math.cos(sa),
-        ss = Math.sin(sa),
-        tc = Math.cos(ta),
-        ts = Math.sin(ta),
-        sf = Math.abs(ta - sa) > Math.PI ? ta <= sa : ta > sa;
-    return 'M' + (sr*sc) + ',' + (sr*ss) +
-           'A' + sr + ',' + sr + ' 0 0,' + (sf?1:0) +
-           ' ' + (sr*tc) + ',' + (sr*ts) +
-           'L' + (tr*tc) + ',' + (tr*ts);
-  }
-
-  function diagonalX(sx, sy, tx, ty) {
-    var m = (sx + tx) / 2;
-    return 'M' + sx + ',' + sy +
-           'C' + m  + ',' + sy +
-           ' ' + m  + ',' + ty +
-           ' ' + tx + ',' + ty;
-  }
-
-  function diagonalY(sx, sy, tx, ty) {
-    var m = (sy + ty) / 2;
-    return 'M' + sx + ',' + sy +
-           'C' + sx + ',' + m +
-           ' ' + tx + ',' + m +
-           ' ' + tx + ',' + ty;
-  }
-
-  function diagonalR(sa, sr, ta, tr) {
-    var sc = Math.cos(sa),
-        ss = Math.sin(sa),
-        tc = Math.cos(ta),
-        ts = Math.sin(ta),
-        mr = (sr + tr) / 2;
-    return 'M' + (sr*sc) + ',' + (sr*ss) +
-           'C' + (mr*sc) + ',' + (mr*ss) +
-           ' ' + (mr*tc) + ',' + (mr*ts) +
-           ' ' + (tr*tc) + ',' + (tr*ts);
-  }
-
-  /**
-   * Pie and donut chart layout.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {function(object): *} params.field - The value field to size pie segments.
-   * @param {number} [params.startAngle=0] - The start angle (in radians) of the layout.
-   * @param {number} [params.endAngle=2π] - The end angle (in radians) of the layout.
-   * @param {boolean} [params.sort] - Boolean flag for sorting sectors by value.
-   */
-  function Pie(params) {
-    Transform.call(this, null, params);
-  }
-
-  Pie.Definition = {
-    "type": "Pie",
-    "metadata": {"modifies": true},
-    "params": [
-      { "name": "field", "type": "field" },
-      { "name": "startAngle", "type": "number", "default": 0 },
-      { "name": "endAngle", "type": "number", "default": 6.283185307179586 },
-      { "name": "sort", "type": "boolean", "default": false },
-      { "name": "as", "type": "string", "array": true, "length": 2, "default": ["startAngle", "endAngle"] }
-    ]
-  };
-
-  var prototype$Y = inherits(Pie, Transform);
-
-  prototype$Y.transform = function(_, pulse) {
-    var as = _.as || ['startAngle', 'endAngle'],
-        startAngle = as[0],
-        endAngle = as[1],
-        field = _.field || one,
-        start = _.startAngle || 0,
-        stop = _.endAngle != null ? _.endAngle : 2 * Math.PI,
-        data = pulse.source,
-        values = data.map(field),
-        n = values.length,
-        a = start,
-        k = (stop - start) / sum(values),
-        index = sequence(n),
-        i, t, v;
-
-    if (_.sort) {
-      index.sort(function(a, b) {
-        return values[a] - values[b];
-      });
-    }
-
-    for (i=0; i<n; ++i) {
-      v = values[index[i]];
-      t = data[index[i]];
-      t[startAngle] = a;
-      t[endAngle] = (a += v * k);
-    }
-
-    this.value = values;
-    return pulse.reflow(_.modified()).modifies(as);
-  };
-
-  var DEFAULT_COUNT = 5;
-
-  function includeZero(scale) {
-    const type = scale.type;
-    return !scale.bins && (
-      type === Linear$1 || type === Pow || type === Sqrt
-    );
-  }
-
-  function includePad(type) {
-    return isContinuous(type) && type !== Sequential;
-  }
-
-  var SKIP$2 = toSet([
-    'set', 'modified', 'clear', 'type', 'scheme', 'schemeExtent', 'schemeCount',
-    'domain', 'domainMin', 'domainMid', 'domainMax',
-    'domainRaw', 'domainImplicit', 'nice', 'zero', 'bins',
-    'range', 'rangeStep', 'round', 'reverse', 'interpolate', 'interpolateGamma'
-  ]);
-
-  /**
-   * Maintains a scale function mapping data values to visual channels.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   */
-  function Scale(params) {
-    Transform.call(this, null, params);
-    this.modified(true); // always treat as modified
-  }
-
-  var prototype$Z = inherits(Scale, Transform);
-
-  prototype$Z.transform = function(_, pulse) {
-    var df = pulse.dataflow,
-        scale = this.value,
-        key = scaleKey(_);
-
-    if (!scale || key !== scale.type) {
-      this.value = scale = scale$1(key)();
-    }
-
-    for (key in _) if (!SKIP$2[key]) {
-      // padding is a scale property for band/point but not others
-      if (key === 'padding' && includePad(scale.type)) continue;
-      // invoke scale property setter, raise warning if not found
-      isFunction(scale[key])
-        ? scale[key](_[key])
-        : df.warn('Unsupported scale property: ' + key);
-    }
-
-    configureRange(scale, _,
-      configureBins(scale, _, configureDomain(scale, _, df))
-    );
-
-    return pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS);
-  };
-
-  function scaleKey(_) {
-    var t = _.type, d = '', n;
-
-    // backwards compatibility pre Vega 5.
-    if (t === Sequential) return Sequential + '-' + Linear$1;
-
-    if (isContinuousColor(_)) {
-      n = _.rawDomain ? _.rawDomain.length
-        : _.domain ? _.domain.length + +(_.domainMid != null)
-        : 0;
-      d = n === 2 ? Sequential + '-'
-        : n === 3 ? Diverging + '-'
-        : '';
-    }
-
-    return ((d + t) || Linear$1).toLowerCase();
-  }
-
-  function isContinuousColor(_) {
-    const t = _.type;
-    return isContinuous(t) && t !== Time && t !== UTC && (
-      _.scheme || _.range && _.range.length && _.range.every(isString)
-    );
-  }
-
-  function configureDomain(scale, _, df) {
-    // check raw domain, if provided use that and exit early
-    var raw = rawDomain(scale, _.domainRaw, df);
-    if (raw > -1) return raw;
-
-    var domain = _.domain,
-        type = scale.type,
-        zero = _.zero || (_.zero === undefined && includeZero(scale)),
-        n, mid;
-
-    if (!domain) return 0;
-
-    // adjust continuous domain for minimum pixel padding
-    if (includePad(type) && _.padding && domain[0] !== peek(domain)) {
-      domain = padDomain(type, domain, _.range, _.padding, _.exponent, _.constant);
-    }
-
-    // adjust domain based on zero, min, max settings
-    if (zero || _.domainMin != null || _.domainMax != null || _.domainMid != null) {
-      n = ((domain = domain.slice()).length - 1) || 1;
-      if (zero) {
-        if (domain[0] > 0) domain[0] = 0;
-        if (domain[n] < 0) domain[n] = 0;
-      }
-      if (_.domainMin != null) domain[0] = _.domainMin;
-      if (_.domainMax != null) domain[n] = _.domainMax;
-
-      if (_.domainMid != null) {
-        mid = _.domainMid;
-        if (mid < domain[0] || mid > domain[n]) {
-          df.warn('Scale domainMid exceeds domain min or max.', mid);
-        }
-        domain.splice(n, 0, mid);
-      }
-    }
-
-    // set the scale domain
-    scale.domain(domainCheck(type, domain, df));
-
-    // if ordinal scale domain is defined, prevent implicit
-    // domain construction as side-effect of scale lookup
-    if (type === Ordinal) {
-      scale.unknown(_.domainImplicit ? implicit : undefined);
-    }
-
-    // perform 'nice' adjustment as requested
-    if (_.nice && scale.nice) {
-      scale.nice((_.nice !== true && tickCount(scale, _.nice)) || null);
-    }
-
-    // return the cardinality of the domain
-    return domain.length;
-  }
-
-  function rawDomain(scale, raw, df) {
-    if (raw) {
-      scale.domain(domainCheck(scale.type, raw, df));
-      return raw.length;
-    } else {
-      return -1;
-    }
-  }
-
-  function padDomain(type, domain, range, pad, exponent, constant) {
-    var span = Math.abs(peek(range) - range[0]),
-        frac = span / (span - 2 * pad),
-        d = type === Log    ? zoomLog(domain, null, frac)
-          : type === Sqrt   ? zoomPow(domain, null, frac, 0.5)
-          : type === Pow    ? zoomPow(domain, null, frac, exponent || 1)
-          : type === Symlog ? zoomSymlog(domain, null, frac, constant || 1)
-          : zoomLinear(domain, null, frac);
-
-    domain = domain.slice();
-    domain[0] = d[0];
-    domain[domain.length-1] = d[1];
-    return domain;
-  }
-
-  function domainCheck(type, domain, df) {
-    if (isLogarithmic(type)) {
-      // sum signs of domain values
-      // if all pos or all neg, abs(sum) === domain.length
-      var s = Math.abs(domain.reduce(function(s, v) {
-        return s + (v < 0 ? -1 : v > 0 ? 1 : 0);
-      }, 0));
-
-      if (s !== domain.length) {
-        df.warn('Log scale domain includes zero: ' + $(domain));
-      }
-    }
-    return domain;
-  }
-
-  function configureBins(scale, _, count) {
-    let bins = _.bins;
-
-    if (bins && !isArray(bins)) {
-      // generate bin boundary array
-      const domain = (bins.start == null || bins.stop == null) && scale.domain(),
-            start = bins.start == null ? domain[0] : bins.start,
-            stop = bins.stop == null ? peek(domain) : bins.stop,
-            step = bins.step;
-
-      if (!step) error('Scale bins parameter missing step property.');
-      bins = sequence(start, stop + step, step);
-    }
-
-    if (bins) {
-      // assign bin boundaries to scale instance
-      scale.bins = bins;
-    } else if (scale.bins) {
-      // no current bins, remove bins if previously set
-      delete scale.bins;
-    }
-
-    // special handling for bin-ordinal scales
-    if (scale.type === BinOrdinal) {
-      if (!bins) {
-        // the domain specifies the bins
-        scale.bins = scale.domain();
-      } else if (!_.domain && !_.domainRaw) {
-        // the bins specify the domain
-        scale.domain(bins);
-        count = bins.length;
-      }
-    }
-
-    // return domain cardinality
-    return count;
-  }
-
-  function configureRange(scale, _, count) {
-    var round = _.round || false,
-        range = _.range;
-
-    // if range step specified, calculate full range extent
-    if (_.rangeStep != null) {
-      range = configureRangeStep(scale.type, _, count);
-    }
-
-    // else if a range scheme is defined, use that
-    else if (_.scheme) {
-      range = configureScheme(scale.type, _, count);
-      if (isFunction(range)) return scale.interpolator(range);
-    }
-
-    // given a range array for an interpolating scale, convert to interpolator
-    else if (range && isInterpolating(scale.type)) {
-      return scale.interpolator(
-        interpolateColors(flip(range, _.reverse), _.interpolate, _.interpolateGamma)
-      );
-    }
-
-    // configure rounding / interpolation
-    if (range && _.interpolate && scale.interpolate) {
-      scale.interpolate(interpolate$1(_.interpolate, _.interpolateGamma));
-    } else if (isFunction(scale.round)) {
-      scale.round(round);
-    } else if (isFunction(scale.rangeRound)) {
-      scale.interpolate(round ? interpolateRound : interpolate);
-    }
-
-    if (range) scale.range(flip(range, _.reverse));
-  }
-
-  function configureRangeStep(type, _, count) {
-    if (type !== Band && type !== Point) {
-      error('Only band and point scales support rangeStep.');
-    }
-
-    // calculate full range based on requested step size and padding
-    var outer = (_.paddingOuter != null ? _.paddingOuter : _.padding) || 0,
-        inner = type === Point ? 1
-              : ((_.paddingInner != null ? _.paddingInner : _.padding) || 0);
-    return [0, _.rangeStep * bandSpace(count, inner, outer)];
-  }
-
-  function configureScheme(type, _, count) {
-    var extent = _.schemeExtent,
-        name, scheme$1;
-
-    if (isArray(_.scheme)) {
-      scheme$1 = interpolateColors(_.scheme, _.interpolate, _.interpolateGamma);
-    } else {
-      name = _.scheme.toLowerCase();
-      scheme$1 = scheme(name);
-      if (!scheme$1) error('Unrecognized scheme name: ' + _.scheme);
-    }
-
-    // determine size for potential discrete range
-    count = (type === Threshold) ? count + 1
-      : (type === BinOrdinal) ? count - 1
-      : (type === Quantile || type === Quantize) ? (+_.schemeCount || DEFAULT_COUNT)
-      : count;
-
-    // adjust and/or quantize scheme as appropriate
-    return isInterpolating(type) ? adjustScheme(scheme$1, extent, _.reverse)
-      : isFunction(scheme$1) ? quantizeInterpolator(adjustScheme(scheme$1, extent), count)
-      : type === Ordinal ? scheme$1 : scheme$1.slice(0, count);
-  }
-
-  function adjustScheme(scheme, extent, reverse) {
-    return (isFunction(scheme) && (extent || reverse))
-      ? interpolateRange(scheme, flip(extent || [0, 1], reverse))
-      : scheme;
-  }
-
-  function flip(array, reverse) {
-    return reverse ? array.slice().reverse() : array;
-  }
-
-  /**
-   * Sorts scenegraph items in the pulse source array.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {function(*,*): number} [params.sort] - A comparator
-   *   function for sorting tuples.
-   */
-  function SortItems(params) {
-    Transform.call(this, null, params);
-  }
-
-  var prototype$_ = inherits(SortItems, Transform);
-
-  prototype$_.transform = function(_, pulse) {
-    var mod = _.modified('sort')
-           || pulse.changed(pulse.ADD)
-           || pulse.modified(_.sort.fields)
-           || pulse.modified('datum');
-
-    if (mod) pulse.source.sort(_.sort);
-
-    this.modified(mod);
-    return pulse;
-  };
-
-  var Zero = 'zero',
-      Center = 'center',
-      Normalize = 'normalize',
-      DefOutput = ['y0', 'y1'];
-
-  /**
-   * Stack layout for visualization elements.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {function(object): *} params.field - The value field to stack.
-   * @param {Array<function(object): *>} [params.groupby] - An array of accessors to groupby.
-   * @param {function(object,object): number} [params.sort] - A comparator for stack sorting.
-   * @param {string} [offset='zero'] - One of 'zero', 'center', 'normalize'.
-   */
-  function Stack(params) {
-    Transform.call(this, null, params);
-  }
-
-  Stack.Definition = {
-    "type": "Stack",
-    "metadata": {"modifies": true},
-    "params": [
-      { "name": "field", "type": "field" },
-      { "name": "groupby", "type": "field", "array": true },
-      { "name": "sort", "type": "compare" },
-      { "name": "offset", "type": "enum", "default": Zero, "values": [Zero, Center, Normalize] },
-      { "name": "as", "type": "string", "array": true, "length": 2, "default": DefOutput }
-    ]
-  };
-
-  var prototype$$ = inherits(Stack, Transform);
-
-  prototype$$.transform = function(_, pulse) {
-    var as = _.as || DefOutput,
-        y0 = as[0],
-        y1 = as[1],
-        field = _.field || one,
-        stack = _.offset === Center ? stackCenter
-              : _.offset === Normalize ? stackNormalize
-              : stackZero,
-        groups, i, n, max;
-
-    // partition, sum, and sort the stack groups
-    groups = partition$2(pulse.source, _.groupby, _.sort, field);
-
-    // compute stack layouts per group
-    for (i=0, n=groups.length, max=groups.max; i<n; ++i) {
-      stack(groups[i], max, field, y0, y1);
-    }
-
-    return pulse.reflow(_.modified()).modifies(as);
-  };
-
-  function stackCenter(group, max, field, y0, y1) {
-    var last = (max - group.sum) / 2,
-        m = group.length,
-        j = 0, t;
-
-    for (; j<m; ++j) {
-      t = group[j];
-      t[y0] = last;
-      t[y1] = (last += Math.abs(field(t)));
-    }
-  }
-
-  function stackNormalize(group, max, field, y0, y1) {
-    var scale = 1 / group.sum,
-        last = 0,
-        m = group.length,
-        j = 0, v = 0, t;
-
-    for (; j<m; ++j) {
-      t = group[j];
-      t[y0] = last;
-      t[y1] = last = scale * (v += Math.abs(field(t)));
-    }
-  }
-
-  function stackZero(group, max, field, y0, y1) {
-    var lastPos = 0,
-        lastNeg = 0,
-        m = group.length,
-        j = 0, v, t;
-
-    for (; j<m; ++j) {
-      t = group[j];
-      v = +field(t);
-      if (v < 0) {
-        t[y0] = lastNeg;
-        t[y1] = (lastNeg += v);
-      } else {
-        t[y0] = lastPos;
-        t[y1] = (lastPos += v);
-      }
-    }
-  }
-
-  function partition$2(data, groupby, sort, field) {
-    var groups = [],
-        get = function(f) { return f(t); },
-        map, i, n, m, t, k, g, s, max;
-
-    // partition data points into stack groups
-    if (groupby == null) {
-      groups.push(data.slice());
-    } else {
-      for (map={}, i=0, n=data.length; i<n; ++i) {
-        t = data[i];
-        k = groupby.map(get);
-        g = map[k];
-        if (!g) {
-          map[k] = (g = []);
-          groups.push(g);
-        }
-        g.push(t);
-      }
-    }
-
-    // compute sums of groups, sort groups as needed
-    for (k=0, max=0, m=groups.length; k<m; ++k) {
-      g = groups[k];
-      for (i=0, s=0, n=g.length; i<n; ++i) {
-        s += Math.abs(field(g[i]));
-      }
-      g.sum = s;
-      if (s > max) max = s;
-      if (sort) g.sort(sort);
-    }
-    groups.max = max;
-
-    return groups;
-  }
-
-
-
-  var encode = /*#__PURE__*/Object.freeze({
-    axisticks: AxisTicks,
-    datajoin: DataJoin,
-    encode: Encode,
-    legendentries: LegendEntries,
-    linkpath: LinkPath,
-    pie: Pie,
-    scale: Scale,
-    sortitems: SortItems,
-    stack: Stack,
-    validTicks: validTicks
-  });
-
-  function ascending$1(a, b) {
-    return a < b ? -1 : a > b ? 1 : a >= b ? 0 : NaN;
-  }
-
-  function bisector$1(compare) {
-    if (compare.length === 1) compare = ascendingComparator$1(compare);
-    return {
-      left: function(a, x, lo, hi) {
-        if (lo == null) lo = 0;
-        if (hi == null) hi = a.length;
-        while (lo < hi) {
-          var mid = lo + hi >>> 1;
-          if (compare(a[mid], x) < 0) lo = mid + 1;
-          else hi = mid;
-        }
-        return lo;
-      },
-      right: function(a, x, lo, hi) {
-        if (lo == null) lo = 0;
-        if (hi == null) hi = a.length;
-        while (lo < hi) {
-          var mid = lo + hi >>> 1;
-          if (compare(a[mid], x) > 0) hi = mid;
-          else lo = mid + 1;
-        }
-        return lo;
-      }
-    };
-  }
-
-  function ascendingComparator$1(f) {
-    return function(d, x) {
-      return ascending$1(f(d), x);
-    };
-  }
-
-  var ascendingBisect$1 = bisector$1(ascending$1);
-
-  function extent$2(values, valueof) {
-    var n = values.length,
-        i = -1,
-        value,
-        min,
-        max;
-
-    if (valueof == null) {
-      while (++i < n) { // Find the first comparable value.
-        if ((value = values[i]) != null && value >= value) {
-          min = max = value;
-          while (++i < n) { // Compare the remaining values.
-            if ((value = values[i]) != null) {
-              if (min > value) min = value;
-              if (max < value) max = value;
-            }
-          }
-        }
-      }
-    }
-
-    else {
-      while (++i < n) { // Find the first comparable value.
-        if ((value = valueof(values[i], i, values)) != null && value >= value) {
-          min = max = value;
-          while (++i < n) { // Compare the remaining values.
-            if ((value = valueof(values[i], i, values)) != null) {
-              if (min > value) min = value;
-              if (max < value) max = value;
-            }
-          }
-        }
-      }
-    }
-
-    return [min, max];
-  }
-
-  function range(start, stop, step) {
-    start = +start, stop = +stop, step = (n = arguments.length) < 2 ? (stop = start, start = 0, 1) : n < 3 ? 1 : +step;
-
-    var i = -1,
-        n = Math.max(0, Math.ceil((stop - start) / step)) | 0,
-        range = new Array(n);
-
-    while (++i < n) {
-      range[i] = start + i * step;
-    }
-
-    return range;
+  function getScale(name, ctx) {
+    let s;
+    return isFunction(name) ? name
+      : isString(name) ? (s = ctx.scales[name]) && s.value
+      : undefined;
   }
 
-  var e10$1 = Math.sqrt(50),
-      e5$1 = Math.sqrt(10),
-      e2$1 = Math.sqrt(2);
-
-  function tickStep$1(start, stop, count) {
-    var step0 = Math.abs(stop - start) / Math.max(0, count),
-        step1 = Math.pow(10, Math.floor(Math.log(step0) / Math.LN10)),
-        error = step0 / step1;
-    if (error >= e10$1) step1 *= 10;
-    else if (error >= e5$1) step1 *= 5;
-    else if (error >= e2$1) step1 *= 2;
-    return stop < start ? -step1 : step1;
-  }
-
-  function thresholdSturges(values) {
-    return Math.ceil(Math.log(values.length) / Math.LN2) + 1;
-  }
-
-  function max$3(values, valueof) {
-    var n = values.length,
-        i = -1,
-        value,
-        max;
-
-    if (valueof == null) {
-      while (++i < n) { // Find the first comparable value.
-        if ((value = values[i]) != null && value >= value) {
-          max = value;
-          while (++i < n) { // Compare the remaining values.
-            if ((value = values[i]) != null && value > max) {
-              max = value;
-            }
-          }
-        }
-      }
-    }
-
-    else {
-      while (++i < n) { // Find the first comparable value.
-        if ((value = valueof(values[i], i, values)) != null && value >= value) {
-          max = value;
-          while (++i < n) { // Compare the remaining values.
-            if ((value = valueof(values[i], i, values)) != null && value > max) {
-              max = value;
-            }
-          }
-        }
-      }
-    }
-
-    return max;
-  }
-
-  var array$2 = Array.prototype;
-
-  var slice$1 = array$2.slice;
-
-  function ascending$2(a, b) {
-    return a - b;
-  }
-
-  function area$2(ring) {
-    var i = 0, n = ring.length, area = ring[n - 1][1] * ring[0][0] - ring[n - 1][0] * ring[0][1];
-    while (++i < n) area += ring[i - 1][1] * ring[i][0] - ring[i - 1][0] * ring[i][1];
-    return area;
-  }
-
-  function constant$5(x) {
-    return function() {
-      return x;
-    };
-  }
-
-  function contains(ring, hole) {
-    var i = -1, n = hole.length, c;
-    while (++i < n) if (c = ringContains(ring, hole[i])) return c;
-    return 0;
-  }
-
-  function ringContains(ring, point) {
-    var x = point[0], y = point[1], contains = -1;
-    for (var i = 0, n = ring.length, j = n - 1; i < n; j = i++) {
-      var pi = ring[i], xi = pi[0], yi = pi[1], pj = ring[j], xj = pj[0], yj = pj[1];
-      if (segmentContains(pi, pj, point)) return 0;
-      if (((yi > y) !== (yj > y)) && ((x < (xj - xi) * (y - yi) / (yj - yi) + xi))) contains = -contains;
-    }
-    return contains;
-  }
-
-  function segmentContains(a, b, c) {
-    var i; return collinear(a, b, c) && within(a[i = +(a[0] === b[0])], c[i], b[i]);
-  }
-
-  function collinear(a, b, c) {
-    return (b[0] - a[0]) * (c[1] - a[1]) === (c[0] - a[0]) * (b[1] - a[1]);
-  }
-
-  function within(p, q, r) {
-    return p <= q && q <= r || r <= q && q <= p;
-  }
-
-  function noop$2() {}
-
-  var cases = [
-    [],
-    [[[1.0, 1.5], [0.5, 1.0]]],
-    [[[1.5, 1.0], [1.0, 1.5]]],
-    [[[1.5, 1.0], [0.5, 1.0]]],
-    [[[1.0, 0.5], [1.5, 1.0]]],
-    [[[1.0, 1.5], [0.5, 1.0]], [[1.0, 0.5], [1.5, 1.0]]],
-    [[[1.0, 0.5], [1.0, 1.5]]],
-    [[[1.0, 0.5], [0.5, 1.0]]],
-    [[[0.5, 1.0], [1.0, 0.5]]],
-    [[[1.0, 1.5], [1.0, 0.5]]],
-    [[[0.5, 1.0], [1.0, 0.5]], [[1.5, 1.0], [1.0, 1.5]]],
-    [[[1.5, 1.0], [1.0, 0.5]]],
-    [[[0.5, 1.0], [1.5, 1.0]]],
-    [[[1.0, 1.5], [1.5, 1.0]]],
-    [[[0.5, 1.0], [1.0, 1.5]]],
-    []
-  ];
-
-  function contours() {
-    var dx = 1,
-        dy = 1,
-        threshold = thresholdSturges,
-        smooth = smoothLinear;
-
-    function contours(values) {
-      var tz = threshold(values);
-
-      // Convert number of thresholds into uniform thresholds.
-      if (!Array.isArray(tz)) {
-        var domain = extent$2(values), start = domain[0], stop = domain[1];
-        tz = tickStep$1(start, stop, tz);
-        tz = range(Math.floor(start / tz) * tz, Math.floor(stop / tz) * tz, tz);
-      } else {
-        tz = tz.slice().sort(ascending$2);
-      }
-
-      return tz.map(function(value) {
-        return contour(values, value);
-      });
-    }
-
-    // Accumulate, smooth contour rings, assign holes to exterior rings.
-    // Based on https://github.com/mbostock/shapefile/blob/v0.6.2/shp/polygon.js
-    function contour(values, value) {
-      var polygons = [],
-          holes = [];
-
-      isorings(values, value, function(ring) {
-        smooth(ring, values, value);
-        if (area$2(ring) > 0) polygons.push([ring]);
-        else holes.push(ring);
-      });
-
-      holes.forEach(function(hole) {
-        for (var i = 0, n = polygons.length, polygon; i < n; ++i) {
-          if (contains((polygon = polygons[i])[0], hole) !== -1) {
-            polygon.push(hole);
-            return;
-          }
-        }
-      });
-
-      return {
-        type: "MultiPolygon",
-        value: value,
-        coordinates: polygons
-      };
-    }
-
-    // Marching squares with isolines stitched into rings.
-    // Based on https://github.com/topojson/topojson-client/blob/v3.0.0/src/stitch.js
-    function isorings(values, value, callback) {
-      var fragmentByStart = new Array,
-          fragmentByEnd = new Array,
-          x, y, t0, t1, t2, t3;
-
-      // Special case for the first row (y = -1, t2 = t3 = 0).
-      x = y = -1;
-      t1 = values[0] >= value;
-      cases[t1 << 1].forEach(stitch);
-      while (++x < dx - 1) {
-        t0 = t1, t1 = values[x + 1] >= value;
-        cases[t0 | t1 << 1].forEach(stitch);
-      }
-      cases[t1 << 0].forEach(stitch);
-
-      // General case for the intermediate rows.
-      while (++y < dy - 1) {
-        x = -1;
-        t1 = values[y * dx + dx] >= value;
-        t2 = values[y * dx] >= value;
-        cases[t1 << 1 | t2 << 2].forEach(stitch);
-        while (++x < dx - 1) {
-          t0 = t1, t1 = values[y * dx + dx + x + 1] >= value;
-          t3 = t2, t2 = values[y * dx + x + 1] >= value;
-          cases[t0 | t1 << 1 | t2 << 2 | t3 << 3].forEach(stitch);
-        }
-        cases[t1 | t2 << 3].forEach(stitch);
-      }
-
-      // Special case for the last row (y = dy - 1, t0 = t1 = 0).
-      x = -1;
-      t2 = values[y * dx] >= value;
-      cases[t2 << 2].forEach(stitch);
-      while (++x < dx - 1) {
-        t3 = t2, t2 = values[y * dx + x + 1] >= value;
-        cases[t2 << 2 | t3 << 3].forEach(stitch);
-      }
-      cases[t2 << 3].forEach(stitch);
-
-      function stitch(line) {
-        var start = [line[0][0] + x, line[0][1] + y],
-            end = [line[1][0] + x, line[1][1] + y],
-            startIndex = index(start),
-            endIndex = index(end),
-            f, g;
-        if (f = fragmentByEnd[startIndex]) {
-          if (g = fragmentByStart[endIndex]) {
-            delete fragmentByEnd[f.end];
-            delete fragmentByStart[g.start];
-            if (f === g) {
-              f.ring.push(end);
-              callback(f.ring);
-            } else {
-              fragmentByStart[f.start] = fragmentByEnd[g.end] = {start: f.start, end: g.end, ring: f.ring.concat(g.ring)};
-            }
-          } else {
-            delete fragmentByEnd[f.end];
-            f.ring.push(end);
-            fragmentByEnd[f.end = endIndex] = f;
-          }
-        } else if (f = fragmentByStart[endIndex]) {
-          if (g = fragmentByEnd[startIndex]) {
-            delete fragmentByStart[f.start];
-            delete fragmentByEnd[g.end];
-            if (f === g) {
-              f.ring.push(end);
-              callback(f.ring);
-            } else {
-              fragmentByStart[g.start] = fragmentByEnd[f.end] = {start: g.start, end: f.end, ring: g.ring.concat(f.ring)};
-            }
-          } else {
-            delete fragmentByStart[f.start];
-            f.ring.unshift(start);
-            fragmentByStart[f.start = startIndex] = f;
-          }
-        } else {
-          fragmentByStart[startIndex] = fragmentByEnd[endIndex] = {start: startIndex, end: endIndex, ring: [start, end]};
-        }
-      }
-    }
-
-    function index(point) {
-      return point[0] * 2 + point[1] * (dx + 1) * 4;
-    }
-
-    function smoothLinear(ring, values, value) {
-      ring.forEach(function(point) {
-        var x = point[0],
-            y = point[1],
-            xt = x | 0,
-            yt = y | 0,
-            v0,
-            v1 = values[yt * dx + xt];
-        if (x > 0 && x < dx && xt === x) {
-          v0 = values[yt * dx + xt - 1];
-          point[0] = x + (value - v0) / (v1 - v0) - 0.5;
-        }
-        if (y > 0 && y < dy && yt === y) {
-          v0 = values[(yt - 1) * dx + xt];
-          point[1] = y + (value - v0) / (v1 - v0) - 0.5;
-        }
-      });
-    }
-
-    contours.contour = contour;
-
-    contours.size = function(_) {
-      if (!arguments.length) return [dx, dy];
-      var _0 = Math.ceil(_[0]), _1 = Math.ceil(_[1]);
-      if (!(_0 > 0) || !(_1 > 0)) throw new Error("invalid size");
-      return dx = _0, dy = _1, contours;
-    };
-
-    contours.thresholds = function(_) {
-      return arguments.length ? (threshold = typeof _ === "function" ? _ : Array.isArray(_) ? constant$5(slice$1.call(_)) : constant$5(_), contours) : threshold;
-    };
-
-    contours.smooth = function(_) {
-      return arguments.length ? (smooth = _ ? smoothLinear : noop$2, contours) : smooth === smoothLinear;
-    };
-
-    return contours;
-  }
-
-  // TODO Optimize edge cases.
-  // TODO Optimize index calculation.
-  // TODO Optimize arguments.
-  function blurX(source, target, r) {
-    var n = source.width,
-        m = source.height,
-        w = (r << 1) + 1;
-    for (var j = 0; j < m; ++j) {
-      for (var i = 0, sr = 0; i < n + r; ++i) {
-        if (i < n) {
-          sr += source.data[i + j * n];
-        }
-        if (i >= r) {
-          if (i >= w) {
-            sr -= source.data[i - w + j * n];
-          }
-          target.data[i - r + j * n] = sr / Math.min(i + 1, n - 1 + w - i, w);
-        }
-      }
-    }
+  function range(name, group) {
+    const s = getScale(name, (group || this).context);
+    return s && s.range ? s.range() : [];
   }
 
-  // TODO Optimize edge cases.
-  // TODO Optimize index calculation.
-  // TODO Optimize arguments.
-  function blurY(source, target, r) {
-    var n = source.width,
-        m = source.height,
-        w = (r << 1) + 1;
-    for (var i = 0; i < n; ++i) {
-      for (var j = 0, sr = 0; j < m + r; ++j) {
-        if (j < m) {
-          sr += source.data[i + j * n];
-        }
-        if (j >= r) {
-          if (j >= w) {
-            sr -= source.data[i + (j - w) * n];
-          }
-          target.data[i + (j - r) * n] = sr / Math.min(j + 1, m - 1 + w - j, w);
-        }
-      }
-    }
+  function domain(name, group) {
+    const s = getScale(name, (group || this).context);
+    return s ? s.domain() : [];
   }
 
-  function defaultX(d) {
-    return d[0];
+  function bandwidth(name, group) {
+    const s = getScale(name, (group || this).context);
+    return s && s.bandwidth ? s.bandwidth() : 0;
   }
-
-  function defaultY(d) {
-    return d[1];
-  }
-
-  function defaultWeight() {
-    return 1;
-  }
-
-  function contourDensity() {
-    var x = defaultX,
-        y = defaultY,
-        weight = defaultWeight,
-        dx = 960,
-        dy = 500,
-        r = 20, // blur radius
-        k = 2, // log2(grid cell size)
-        o = r * 3, // grid offset, to pad for blur
-        n = (dx + o * 2) >> k, // grid width
-        m = (dy + o * 2) >> k, // grid height
-        threshold = constant$5(20);
-
-    function density(data) {
-      var values0 = new Float32Array(n * m),
-          values1 = new Float32Array(n * m);
-
-      data.forEach(function(d, i, data) {
-        var xi = (+x(d, i, data) + o) >> k,
-            yi = (+y(d, i, data) + o) >> k,
-            wi = +weight(d, i, data);
-        if (xi >= 0 && xi < n && yi >= 0 && yi < m) {
-          values0[xi + yi * n] += wi;
-        }
-      });
-
-      // TODO Optimize.
-      blurX({width: n, height: m, data: values0}, {width: n, height: m, data: values1}, r >> k);
-      blurY({width: n, height: m, data: values1}, {width: n, height: m, data: values0}, r >> k);
-      blurX({width: n, height: m, data: values0}, {width: n, height: m, data: values1}, r >> k);
-      blurY({width: n, height: m, data: values1}, {width: n, height: m, data: values0}, r >> k);
-      blurX({width: n, height: m, data: values0}, {width: n, height: m, data: values1}, r >> k);
-      blurY({width: n, height: m, data: values1}, {width: n, height: m, data: values0}, r >> k);
-
-      var tz = threshold(values0);
-
-      // Convert number of thresholds into uniform thresholds.
-      if (!Array.isArray(tz)) {
-        var stop = max$3(values0);
-        tz = tickStep$1(0, stop, tz);
-        tz = range(0, Math.floor(stop / tz) * tz, tz);
-        tz.shift();
-      }
-
-      return contours()
-          .thresholds(tz)
-          .size([n, m])
-        (values0)
-          .map(transform);
-    }
-
-    function transform(geometry) {
-      geometry.value *= Math.pow(2, -2 * k); // Density in points per square pixel.
-      geometry.coordinates.forEach(transformPolygon);
-      return geometry;
-    }
-
-    function transformPolygon(coordinates) {
-      coordinates.forEach(transformRing);
-    }
-
-    function transformRing(coordinates) {
-      coordinates.forEach(transformPoint);
-    }
-
-    // TODO Optimize.
-    function transformPoint(coordinates) {
-      coordinates[0] = coordinates[0] * Math.pow(2, k) - o;
-      coordinates[1] = coordinates[1] * Math.pow(2, k) - o;
-    }
-
-    function resize() {
-      o = r * 3;
-      n = (dx + o * 2) >> k;
-      m = (dy + o * 2) >> k;
-      return density;
-    }
-
-    density.x = function(_) {
-      return arguments.length ? (x = typeof _ === "function" ? _ : constant$5(+_), density) : x;
-    };
-
-    density.y = function(_) {
-      return arguments.length ? (y = typeof _ === "function" ? _ : constant$5(+_), density) : y;
-    };
 
-    density.weight = function(_) {
-      return arguments.length ? (weight = typeof _ === "function" ? _ : constant$5(+_), density) : weight;
-    };
-
-    density.size = function(_) {
-      if (!arguments.length) return [dx, dy];
-      var _0 = Math.ceil(_[0]), _1 = Math.ceil(_[1]);
-      if (!(_0 >= 0) && !(_0 >= 0)) throw new Error("invalid size");
-      return dx = _0, dy = _1, resize();
-    };
-
-    density.cellSize = function(_) {
-      if (!arguments.length) return 1 << k;
-      if (!((_ = +_) >= 1)) throw new Error("invalid cell size");
-      return k = Math.floor(Math.log(_) / Math.LN2), resize();
-    };
-
-    density.thresholds = function(_) {
-      return arguments.length ? (threshold = typeof _ === "function" ? _ : Array.isArray(_) ? constant$5(slice$1.call(_)) : constant$5(_), density) : threshold;
-    };
-
-    density.bandwidth = function(_) {
-      if (!arguments.length) return Math.sqrt(r * (r + 1));
-      if (!((_ = +_) >= 0)) throw new Error("invalid bandwidth");
-      return r = Math.round((Math.sqrt(4 * _ * _ + 1) - 1) / 2), resize();
-    };
-
-    return density;
+  function bandspace(count, paddingInner, paddingOuter) {
+    return bandSpace(count || 0, paddingInner || 0, paddingOuter || 0);
   }
-
-  var CONTOUR_PARAMS = ['size', 'smooth'];
-  var DENSITY_PARAMS = ['x', 'y', 'weight', 'size', 'cellSize', 'bandwidth'];
 
-  /**
-   * Generate contours based on kernel-density estimation of point data.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {Array<number>} params.size - The dimensions [width, height] over which to compute contours.
-   *  If the values parameter is provided, this must be the dimensions of the input data.
-   *  If density estimation is performed, this is the output view dimensions in pixels.
-   * @param {Array<number>} [params.values] - An array of numeric values representing an
-   *  width x height grid of values over which to compute contours. If unspecified, this
-   *  transform will instead attempt to compute contours for the kernel density estimate
-   *  using values drawn from data tuples in the input pulse.
-   * @param {function(object): number} [params.x] - The pixel x-coordinate accessor for density estimation.
-   * @param {function(object): number} [params.y] - The pixel y-coordinate accessor for density estimation.
-   * @param {function(object): number} [params.weight] - The data point weight accessor for density estimation.
-   * @param {number} [params.cellSize] - Contour density calculation cell size.
-   * @param {number} [params.bandwidth] - Kernel density estimation bandwidth.
-   * @param {Array<number>} [params.thresholds] - Contour threshold array. If
-   *   this parameter is set, the count and nice parameters will be ignored.
-   * @param {number} [params.count] - The desired number of contours.
-   * @param {boolean} [params.nice] - Boolean flag indicating if the contour
-   *   threshold values should be automatically aligned to "nice"
-   *   human-friendly values. Setting this flag may cause the number of
-   *   thresholds to deviate from the specified count.
-   * @param {boolean} [params.smooth] - Boolean flag indicating if the contour
-   *   polygons should be smoothed using linear interpolation. The default is
-   *   true. The parameter is ignored when using density estimation.
-   */
-  function Contour(params) {
-    Transform.call(this, null, params);
+  function copy$2(name, group) {
+    const s = getScale(name, (group || this).context);
+    return s ? s.copy() : undefined;
   }
-
-  Contour.Definition = {
-    "type": "Contour",
-    "metadata": {"generates": true},
-    "params": [
-      { "name": "size", "type": "number", "array": true, "length": 2, "required": true },
-      { "name": "values", "type": "number", "array": true },
-      { "name": "x", "type": "field" },
-      { "name": "y", "type": "field" },
-      { "name": "weight", "type": "field" },
-      { "name": "cellSize", "type": "number" },
-      { "name": "bandwidth", "type": "number" },
-      { "name": "count", "type": "number" },
-      { "name": "smooth", "type": "boolean" },
-      { "name": "nice", "type": "boolean", "default": false },
-      { "name": "thresholds", "type": "number", "array": true }
-    ]
-  };
-
-  var prototype$10 = inherits(Contour, Transform);
-
-  prototype$10.transform = function(_, pulse) {
-    if (this.value && !pulse.changed() && !_.modified())
-      return pulse.StopPropagation;
-
-    var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
-        count = _.count || 10,
-        contour, params, values;
-
-    if (_.values) {
-      contour = contours();
-      params = CONTOUR_PARAMS;
-      values = _.values;
-    } else {
-      contour = contourDensity();
-      params = DENSITY_PARAMS;
-      values = pulse.materialize(pulse.SOURCE).source;
-    }
-
-    // set threshold parameter
-    contour.thresholds(_.thresholds || (_.nice ? count : quantize$2(count)));
 
-    // set all other parameters
-    params.forEach(function(param) {
-      if (_[param] != null) contour[param](_[param]);
-    });
-
-    if (this.value) out.rem = this.value;
-    values = values && values.length ? contour(values).map(ingest) : [];
-    this.value = out.source = out.add = values;
-
-    return out;
-  };
-
-  function quantize$2(k) {
-    return function(values) {
-      var ex = extent$1(values), x0 = ex[0], dx = ex[1] - x0,
-          t = [], i = 1;
-      for (; i<=k; ++i) t.push(x0 + dx * i / (k + 1));
-      return t;
-    };
+  function scale$2(name, value, group) {
+    const s = getScale(name, (group || this).context);
+    return s && value !== undefined ? s(value) : undefined;
   }
 
-  var Feature = 'Feature';
-  var FeatureCollection = 'FeatureCollection';
-  var MultiPoint = 'MultiPoint';
-
-  /**
-   * Consolidate an array of [longitude, latitude] points or GeoJSON features
-   * into a combined GeoJSON object. This transform is particularly useful for
-   * combining geo data for a Projection's fit argument. The resulting GeoJSON
-   * data is available as this transform's value. Input pulses are unchanged.
-   * @constructor
-   * @param {object} params - The parameters for this operator.
-   * @param {Array<function(object): *>} [params.fields] - A two-element array
-   *   of field accessors for the longitude and latitude values.
-   * @param {function(object): *} params.geojson - A field accessor for
-   *   retrieving GeoJSON feature data.
-   */
-  function GeoJSON(params) {
-    Transform.call(this, null, params);
+  function invert(name, range, group) {
+    const s = getScale(name, (group || this).context);
+    return !s ? undefined
+      : isArray(range) ? (s.invertRange || s.invert)(range)
+      : (s.invert || s.invertExtent)(range);
   }
-
-  GeoJSON.Definition = {
-    "type": "GeoJSON",
-    "metadata": {},
-    "params": [
-      { "name": "fields", "type": "field", "array": true, "length": 2 },
-      { "name": "geojson", "type": "field" },
-    ]
-  };
-
-  var prototype$11 = inherits(GeoJSON, Transform);
-
-  prototype$11.transform = function(_, pulse) {
-    var features = this._features,
-        points = this._points,
-        fields = _.fields,
-        lon = fields && fields[0],
-        lat = fields && fields[1],
-        geojson = _.geojson,
-        flag = pulse.ADD,
-        mod;
-
-    mod = _.modified()
-      || pulse.changed(pulse.REM)
-      || pulse.modified(accessorFields(geojson))
-      || (lon && (pulse.modified(accessorFields(lon))))
-      || (lat && (pulse.modified(accessorFields(lat))));
-
-    if (!this.value || mod) {
-      flag = pulse.SOURCE;
-      this._features = (features = []);
-      this._points = (points = []);
-    }
-
-    if (geojson) {
-      pulse.visit(flag, function(t) {
-        features.push(geojson(t));
-      });
-    }
-
-    if (lon && lat) {
-      pulse.visit(flag, function(t) {
-        var x = lon(t),
-            y = lat(t);
-        if (x != null && y != null && (x = +x) === x && (y = +y) === y) {
-          points.push([x, y]);
-        }
-      });
-      features = features.concat({
-        type: Feature,
-        geometry: {
-          type: MultiPoint,
-          coordinates: points
-        }
-      });
-    }
-
-    this.value = {
-      type: FeatureCollection,
-      features: features
-    };
-  };
 
   // Adds floating point numbers with twice the normal precision.
   // Reference: J. R. Shewchuk, Adaptive Precision Floating-Point Arithmetic and
@@ -21883,7 +19742,7 @@
     return x > 1 ? halfPi$1 : x < -1 ? -halfPi$1 : Math.asin(x);
   }
 
-  function noop$3() {}
+  function noop$2() {}
 
   function streamGeometry(geometry, stream) {
     if (geometry && streamGeometryType.hasOwnProperty(geometry.type)) {
@@ -21965,9 +19824,9 @@
       sinPhi0;
 
   var areaStream = {
-    point: noop$3,
-    lineStart: noop$3,
-    lineEnd: noop$3,
+    point: noop$2,
+    lineStart: noop$2,
+    lineEnd: noop$2,
     polygonStart: function() {
       areaRingSum.reset();
       areaStream.lineStart = areaRingStart;
@@ -21976,7 +19835,7 @@
     polygonEnd: function() {
       var areaRing = +areaRingSum;
       areaSum.add(areaRing < 0 ? tau$2 + areaRing : areaRing);
-      this.lineStart = this.lineEnd = this.point = noop$3;
+      this.lineStart = this.lineEnd = this.point = noop$2;
     },
     sphere: function() {
       areaSum.add(tau$2);
@@ -22019,7 +19878,7 @@
     lambda0 = lambda, cosPhi0 = cosPhi, sinPhi0 = sinPhi;
   }
 
-  function area$3(object) {
+  function area$2(object) {
     areaSum.reset();
     geoStream(object, areaStream);
     return areaSum * 2;
@@ -22239,7 +20098,7 @@
       x0, y0, z0; // previous point
 
   var centroidStream = {
-    sphere: noop$3,
+    sphere: noop$2,
     point: centroidPoint,
     lineStart: centroidLineStart,
     lineEnd: centroidLineEnd,
@@ -22493,7 +20352,7 @@
       lineStart: function() {
         lines.push(line = []);
       },
-      lineEnd: noop$3,
+      lineEnd: noop$2,
       rejoin: function() {
         if (lines.length > 1) lines.push(lines.pop().concat(lines.shift()));
       },
@@ -22686,12 +20545,12 @@
     return (angle < -epsilon$3 || angle < epsilon$3 && sum$1 < -epsilon$3) ^ (winding & 1);
   }
 
-  function ascending$3(a, b) {
+  function ascending$1(a, b) {
     return a < b ? -1 : a > b ? 1 : a >= b ? 0 : NaN;
   }
 
-  function bisector$2(compare) {
-    if (compare.length === 1) compare = ascendingComparator$2(compare);
+  function bisector$1(compare) {
+    if (compare.length === 1) compare = ascendingComparator$1(compare);
     return {
       left: function(a, x, lo, hi) {
         if (lo == null) lo = 0;
@@ -22716,13 +20575,13 @@
     };
   }
 
-  function ascendingComparator$2(f) {
+  function ascendingComparator$1(f) {
     return function(d, x) {
-      return ascending$3(f(d), x);
+      return ascending$1(f(d), x);
     };
   }
 
-  var ascendingBisect$2 = bisector$2(ascending$3);
+  var ascendingBisect$1 = bisector$1(ascending$1);
 
   function range$2(start, stop, step) {
     start = +start, stop = +stop, step = (n = arguments.length) < 2 ? (stop = start, start = 0, 1) : n < 3 ? 1 : +step;
@@ -23489,15 +21348,15 @@
       y0$1;
 
   var areaStream$1 = {
-    point: noop$3,
-    lineStart: noop$3,
-    lineEnd: noop$3,
+    point: noop$2,
+    lineStart: noop$2,
+    lineEnd: noop$2,
     polygonStart: function() {
       areaStream$1.lineStart = areaRingStart$1;
       areaStream$1.lineEnd = areaRingEnd$1;
     },
     polygonEnd: function() {
-      areaStream$1.lineStart = areaStream$1.lineEnd = areaStream$1.point = noop$3;
+      areaStream$1.lineStart = areaStream$1.lineEnd = areaStream$1.point = noop$2;
       areaSum$1.add(abs$1(areaRingSum$1));
       areaRingSum$1.reset();
     },
@@ -23533,10 +21392,10 @@
 
   var boundsStream$1 = {
     point: boundsPoint$1,
-    lineStart: noop$3,
-    lineEnd: noop$3,
-    polygonStart: noop$3,
-    polygonEnd: noop$3,
+    lineStart: noop$2,
+    lineEnd: noop$2,
+    polygonStart: noop$2,
+    polygonEnd: noop$2,
     result: function() {
       var bounds = [[x0$2, y0$2], [x1, y1]];
       x1 = y1 = -(y0$2 = x0$2 = Infinity);
@@ -23688,7 +21547,7 @@
         }
       }
     },
-    result: noop$3
+    result: noop$2
   };
 
   var lengthSum$1 = adder(),
@@ -23699,13 +21558,13 @@
       y0$4;
 
   var lengthStream = {
-    point: noop$3,
+    point: noop$2,
     lineStart: function() {
       lengthStream.point = lengthPointFirst;
     },
     lineEnd: function() {
       if (lengthRing) lengthPoint(x00$2, y00$2);
-      lengthStream.point = noop$3;
+      lengthStream.point = noop$2;
     },
     polygonStart: function() {
       lengthRing = true;
@@ -24653,6 +22512,8656 @@
         .scale(159.155);
   }
 
+  function geoMethod(methodName, globalMethod) {
+    return function(projection, geojson, group) {
+      if (projection) {
+        // projection defined, use it
+        const p = getScale(projection, (group || this).context);
+        return p && p.path[methodName](geojson);
+      } else {
+        // projection undefined, use global method
+        return globalMethod(geojson);
+      }
+    };
+  }
+
+  const geoArea = geoMethod('area', area$2);
+  const geoBounds = geoMethod('bounds', bounds$1);
+  const geoCentroid = geoMethod('centroid', centroid);
+
+  function inScope(item) {
+    let group = this.context.group,
+        value = false;
+
+    if (group) while (item) {
+      if (item === group) { value = true; break; }
+      item = item.mark.group;
+    }
+    return value;
+  }
+
+  function intersect$1(b, opt, group) {
+    if (!b) return [];
+
+    const [u, v] = b,
+          box = new Bounds().set(u[0], u[1], v[0], v[1]),
+          scene = group || this.context.dataflow.scenegraph().root;
+
+    return intersect$2(scene, box, filter$1(opt));
+  }
+
+  function filter$1(opt) {
+    let p = null;
+
+    if (opt) {
+      const types = array(opt.marktype),
+            names = array(opt.markname);
+      p = _ => (!types.length || types.some(t => _.marktype === t))
+            && (!names.length || names.some(s => _.name === s));
+    }
+
+    return p;
+  }
+
+  function log$4(df, method, args) {
+    try {
+      df[method].apply(df, ['EXPRESSION'].concat([].slice.call(args)));
+    } catch (err) {
+      df.warn(err);
+    }
+    return args[args.length-1];
+  }
+
+  function warn() {
+    return log$4(this.context.dataflow, 'warn', arguments);
+  }
+
+  function info() {
+    return log$4(this.context.dataflow, 'info', arguments);
+  }
+
+  function debug() {
+    return log$4(this.context.dataflow, 'debug', arguments);
+  }
+
+  function merge$2() {
+    var args = [].slice.call(arguments);
+    args.unshift({});
+    return extend.apply(null, args);
+  }
+
+  function equal(a, b) {
+    return a === b || a !== a && b !== b ? true
+      : isArray(a) && isArray(b) && a.length === b.length ? equalArray(a, b)
+      : false;
+  }
+
+  function equalArray(a, b) {
+    for (let i=0, n=a.length; i<n; ++i) {
+      if (!equal(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  function removePredicate(props) {
+    return function(_) {
+      for (let key in props) {
+        if (!equal(_[key], props[key])) return false;
+      }
+      return true;
+    };
+  }
+
+  function modify(name, insert, remove, toggle, modify, values) {
+    let df = this.context.dataflow,
+        data = this.context.data[name],
+        input = data.input,
+        changes = data.changes,
+        stamp = df.stamp(),
+        predicate, key;
+
+    if (df._trigger === false || !(input.value.length || insert || toggle)) {
+      // nothing to do!
+      return 0;
+    }
+
+    if (!changes || changes.stamp < stamp) {
+      data.changes = (changes = df.changeset());
+      changes.stamp = stamp;
+      df.runAfter(function() {
+        data.modified = true;
+        df.pulse(input, changes).run();
+      }, true, 1);
+    }
+
+    if (remove) {
+      predicate = remove === true ? truthy
+        : (isArray(remove) || isTuple(remove)) ? remove
+        : removePredicate(remove);
+      changes.remove(predicate);
+    }
+
+    if (insert) {
+      changes.insert(insert);
+    }
+
+    if (toggle) {
+      predicate = removePredicate(toggle);
+      if (input.value.some(predicate)) {
+        changes.remove(predicate);
+      } else {
+        changes.insert(toggle);
+      }
+    }
+
+    if (modify) {
+      for (key in values) {
+        changes.modify(modify, key, values[key]);
+      }
+    }
+
+    return 1;
+  }
+
+  function pinchDistance(event) {
+    const t = event.touches,
+          dx = t[0].clientX - t[1].clientX,
+          dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function pinchAngle(event) {
+    const t = event.touches;
+    return Math.atan2(
+      t[0].clientY - t[1].clientY,
+      t[0].clientX - t[1].clientX
+    );
+  }
+
+  function scaleGradient(scale, p0, p1, count, group) {
+    scale = getScale(scale, (group || this).context);
+
+    const gradient = Gradient(p0, p1);
+
+    let stops = scale.domain(),
+        min = stops[0],
+        max = peek(stops),
+        fraction = identity;
+
+    if (!(max - min)) {
+      // expand scale if domain has zero span, fix #1479
+      scale = (scale.interpolator
+        ? scale$1('sequential')().interpolator(scale.interpolator())
+        : scale$1('linear')().interpolate(scale.interpolate()).range(scale.range())
+      ).domain([min=0, max=1]);
+    } else {
+      fraction = scaleFraction(scale, min, max);
+    }
+
+    if (scale.ticks) {
+      stops = scale.ticks(+count || 15);
+      if (min !== stops[0]) stops.unshift(min);
+      if (max !== peek(stops)) stops.push(max);
+    }
+
+    stops.forEach(_ => gradient.stop(fraction(_), scale(_)));
+
+    return gradient;
+  }
+
+  function geoShape(projection, geojson, group) {
+    const p = getScale(projection, (group || this).context);
+    return function(context) {
+      return p ? p.path.context(context)(geojson) : '';
+    }
+  }
+
+  function pathShape(path) {
+    let p = null;
+    return function(context) {
+      return context
+        ? pathRender(context, (p = p || pathParse(path)))
+        : path;
+    };
+  }
+
+  const EMPTY = {};
+
+  function datum(d) { return d.data; }
+
+  function treeNodes(name, context) {
+    const tree = data.call(context, name);
+    return tree.root && tree.root.lookup || EMPTY;
+  }
+
+  function treePath(name, source, target) {
+    const nodes = treeNodes(name, this),
+          s = nodes[source],
+          t = nodes[target];
+    return s && t ? s.path(t).map(datum) : undefined;
+  }
+
+  function treeAncestors(name, node) {
+    const n = treeNodes(name, this)[node];
+    return n ? n.ancestors().map(datum) : undefined;
+  }
+
+  const _window = (typeof window !== 'undefined' && window) || null;
+
+  function screen() {
+    return _window ? _window.screen : {};
+  }
+
+  function windowSize() {
+    return _window
+      ? [_window.innerWidth, _window.innerHeight]
+      : [undefined, undefined];
+  }
+
+  function containerSize() {
+    const view = this.context.dataflow,
+          el = view.container && view.container();
+    return el
+      ? [el.clientWidth, el.clientHeight]
+      : [undefined, undefined];
+  }
+
+  const DataPrefix$1   = ':';
+  const IndexPrefix$1  = '@';
+  const ScalePrefix  = '%';
+  const SignalPrefix = '$';
+
+  function dataVisitor(name, args, scope, params) {
+    if (args[0].type !== Literal) {
+      error('First argument to data functions must be a string literal.');
+    }
+
+    const data = args[0].value,
+          dataName = DataPrefix$1 + data;
+
+    if (!params.hasOwnProperty(dataName)) {
+      params[dataName] = scope.getData(data).tuplesRef();
+    }
+  }
+
+  function indataVisitor(name, args, scope, params) {
+    if (args[0].type !== Literal) error('First argument to indata must be a string literal.');
+    if (args[1].type !== Literal) error('Second argument to indata must be a string literal.');
+
+    const data = args[0].value,
+          field = args[1].value,
+          indexName = IndexPrefix$1 + field;
+
+    if (!params.hasOwnProperty(indexName)) {
+      params[indexName] = scope.getData(data).indataRef(scope, field);
+    }
+  }
+
+  function scaleVisitor(name, args, scope, params) {
+    if (args[0].type === Literal) {
+      // add scale dependency
+      addScaleDependency(scope, params, args[0].value);
+    }
+    else if (args[0].type === Identifier) {
+      // indirect scale lookup; add all scales as parameters
+      for (name in scope.scales) {
+        addScaleDependency(scope, params, name);
+      }
+    }
+  }
+
+  function addScaleDependency(scope, params, name) {
+    const scaleName = ScalePrefix + name;
+    if (!params.hasOwnProperty(scaleName)) {
+      try {
+        params[scaleName] = scope.scaleRef(name);
+      } catch (err) {
+        // TODO: error handling? warning?
+      }
+    }
+  }
+
+  // Expression function context object
+  const functionContext = {
+    random: function() { return exports.random(); }, // override default
+    isArray,
+    isBoolean,
+    isDate,
+    isDefined: function(_) { return _ !== undefined; },
+    isNumber,
+    isObject,
+    isRegExp,
+    isString,
+    isTuple,
+    isValid: function(_) { return _ != null && _ === _; },
+    toBoolean,
+    toDate,
+    toNumber,
+    toString,
+    flush,
+    lerp,
+    merge: merge$2,
+    pad,
+    peek,
+    span,
+    inrange,
+    truncate,
+    rgb,
+    lab,
+    hcl,
+    hsl,
+    sequence,
+    format: format$2,
+    utcFormat: utcFormat$1,
+    utcParse: utcParse$1,
+    timeFormat: timeFormat$1,
+    timeParse: timeParse$1,
+    monthFormat,
+    monthAbbrevFormat,
+    dayFormat,
+    dayAbbrevFormat,
+    quarter,
+    utcquarter,
+    warn,
+    info,
+    debug,
+    extent,
+    inScope,
+    intersect: intersect$1,
+    clampRange,
+    pinchDistance,
+    pinchAngle,
+    screen,
+    containerSize,
+    windowSize,
+    bandspace,
+    setdata,
+    pathShape,
+    panLinear,
+    panLog,
+    panPow,
+    panSymlog,
+    zoomLinear,
+    zoomLog,
+    zoomPow,
+    zoomSymlog,
+    encode,
+    modify
+  };
+
+  const eventFunctions = ['view', 'item', 'group', 'xy', 'x', 'y'], // event functions
+        eventPrefix = 'event.vega.', // event function prefix
+        thisPrefix = 'this.', // function context prefix
+        astVisitors = {}; // AST visitors for dependency analysis
+
+  // Build expression function registry
+  function buildFunctions(codegen) {
+    const fn = functions(codegen);
+    eventFunctions.forEach(name => fn[name] = eventPrefix + name);
+    for (let name in functionContext) { fn[name] = thisPrefix + name; }
+    return fn;
+  }
+
+  // Register an expression function
+  function expressionFunction(name, fn, visitor) {
+    if (arguments.length === 1) {
+      return functionContext[name];
+    }
+
+    // register with the functionContext
+    functionContext[name] = fn;
+
+    // if there is an astVisitor register that, too
+    if (visitor) astVisitors[name] = visitor;
+
+    // if the code generator has already been initialized,
+    // we need to also register the function with it
+    if (codeGenerator) codeGenerator.functions[name] = thisPrefix + name;
+    return this;
+  }
+
+  // register expression functions with ast visitors
+  expressionFunction('bandwidth', bandwidth, scaleVisitor);
+  expressionFunction('copy', copy$2, scaleVisitor);
+  expressionFunction('domain', domain, scaleVisitor);
+  expressionFunction('range', range, scaleVisitor);
+  expressionFunction('invert', invert, scaleVisitor);
+  expressionFunction('scale', scale$2, scaleVisitor);
+  expressionFunction('gradient', scaleGradient, scaleVisitor);
+  expressionFunction('geoArea', geoArea, scaleVisitor);
+  expressionFunction('geoBounds', geoBounds, scaleVisitor);
+  expressionFunction('geoCentroid', geoCentroid, scaleVisitor);
+  expressionFunction('geoShape', geoShape, scaleVisitor);
+  expressionFunction('indata', indata, indataVisitor);
+  expressionFunction('data', data, dataVisitor);
+  expressionFunction('treePath', treePath, dataVisitor);
+  expressionFunction('treeAncestors', treeAncestors, dataVisitor);
+
+  // register Vega-Lite selection functions
+  expressionFunction('vlSelectionTest', selectionTest, selectionVisitor);
+  expressionFunction('vlSelectionResolve', selectionResolve, selectionVisitor);
+
+  // Export code generator and parameters
+  const codegenParams = {
+    blacklist:  ['_'],
+    whitelist:  ['datum', 'event', 'item'],
+    fieldvar:   'datum',
+    globalvar:  function(id) { return '_[' + $(SignalPrefix + id) + ']'; },
+    functions:  buildFunctions,
+    constants:  constants,
+    visitors:   astVisitors
+  };
+
+  var codeGenerator = codegen(codegenParams);
+
+  function parseExpression$1(expr, scope, preamble) {
+    var params = {}, ast, gen;
+
+    // parse the expression to an abstract syntax tree (ast)
+    try {
+      expr = isString(expr) ? expr : ($(expr) + '');
+      ast = parse$3(expr);
+    } catch (err) {
+      error('Expression parse error: ' + expr);
+    }
+
+    // analyze ast function calls for dependencies
+    ast.visit(function visitor(node) {
+      if (node.type !== CallExpression) return;
+      var name = node.callee.name,
+          visit = codegenParams.visitors[name];
+      if (visit) visit(name, node.arguments, scope, params);
+    });
+
+    // perform code generation
+    gen = codeGenerator(ast);
+
+    // collect signal dependencies
+    gen.globals.forEach(function(name) {
+      var signalName = SignalPrefix + name;
+      if (!params.hasOwnProperty(signalName) && scope.getSignal(name)) {
+        params[signalName] = scope.signalRef(name);
+      }
+    });
+
+    // return generated expression code and dependencies
+    return {
+      $expr:   preamble ? preamble + 'return(' + gen.code + ');' : gen.code,
+      $fields: gen.fields,
+      $params: params
+    };
+  }
+
+  function Entry(type, value, params, parent) {
+    this.id = -1;
+    this.type = type;
+    this.value = value;
+    this.params = params;
+    if (parent) this.parent = parent;
+  }
+
+  function entry(type, value, params, parent) {
+    return new Entry(type, value, params, parent);
+  }
+
+  function operator(value, params) {
+    return entry('operator', value, params);
+  }
+
+  // -----
+
+  function ref(op) {
+    var ref = {$ref: op.id};
+    // if operator not yet registered, cache ref to resolve later
+    if (op.id < 0) (op.refs = op.refs || []).push(ref);
+    return ref;
+  }
+
+  var tupleidRef = {
+    $tupleid: 1,
+    toString: function() { return ':_tupleid_:'; }
+  };
+
+  function fieldRef(field, name) {
+    return name ? {$field: field, $name: name} : {$field: field};
+  }
+
+  var keyFieldRef = fieldRef('key');
+
+  function compareRef(fields, orders) {
+    return {$compare: fields, $order: orders};
+  }
+
+  function keyRef(fields, flat) {
+    var ref = {$key: fields};
+    if (flat) ref.$flat = true;
+    return ref;
+  }
+
+  // -----
+
+  var Ascending  = 'ascending';
+
+  var Descending = 'descending';
+
+  function sortKey(sort) {
+    return !isObject(sort) ? ''
+      : (sort.order === Descending ? '-' : '+')
+        + aggrField(sort.op, sort.field);
+  }
+
+  function aggrField(op, field) {
+    return (op && op.signal ? '$' + op.signal : op || '')
+      + (op && field ? '_' : '')
+      + (field && field.signal ? '$' + field.signal : field || '');
+  }
+
+  // -----
+
+  var Scope = 'scope';
+
+  var View = 'view';
+
+  function isSignal(_) {
+    return _ && _.signal;
+  }
+
+  function isExpr(_) {
+    return _ && _.expr;
+  }
+
+  function hasSignal(_) {
+    if (isSignal(_)) return true;
+    if (isObject(_)) for (var key in _) {
+      if (hasSignal(_[key])) return true;
+    }
+    return false;
+  }
+
+  function value(specValue, defaultValue) {
+    return specValue != null ? specValue : defaultValue;
+  }
+
+  function deref(v) {
+    return v && v.signal || v;
+  }
+
+  var Timer = 'timer';
+
+  function parseStream(stream, scope) {
+    var method = stream.merge ? mergeStream
+      : stream.stream ? nestedStream
+      : stream.type ? eventStream
+      : error('Invalid stream specification: ' + $(stream));
+
+    return method(stream, scope);
+  }
+
+  function eventSource(source) {
+     return source === Scope ? View : (source || View);
+  }
+
+  function mergeStream(stream, scope) {
+    var list = stream.merge.map(s => parseStream(s, scope)),
+        entry = streamParameters({merge: list}, stream, scope);
+    return scope.addStream(entry).id;
+  }
+
+  function nestedStream(stream, scope) {
+    var id = parseStream(stream.stream, scope),
+        entry = streamParameters({stream: id}, stream, scope);
+    return scope.addStream(entry).id;
+  }
+
+  function eventStream(stream, scope) {
+    var id, entry;
+
+    if (stream.type === Timer) {
+      id = scope.event(Timer, stream.throttle);
+      stream = {between: stream.between, filter: stream.filter};
+    } else {
+      id = scope.event(eventSource(stream.source), stream.type);
+    }
+
+    entry = streamParameters({stream: id}, stream, scope);
+    return Object.keys(entry).length === 1
+      ? id
+      : scope.addStream(entry).id;
+  }
+
+  function streamParameters(entry, stream, scope) {
+    var param = stream.between;
+
+    if (param) {
+      if (param.length !== 2) {
+        error('Stream "between" parameter must have 2 entries: ' + $(stream));
+      }
+      entry.between = [
+        parseStream(param[0], scope),
+        parseStream(param[1], scope)
+      ];
+    }
+
+    param = stream.filter ? [].concat(stream.filter) : [];
+    if (stream.marktype || stream.markname || stream.markrole) {
+      // add filter for mark type, name and/or role
+      param.push(filterMark(stream.marktype, stream.markname, stream.markrole));
+    }
+    if (stream.source === Scope) {
+      // add filter to limit events from sub-scope only
+      param.push('inScope(event.item)');
+    }
+    if (param.length) {
+      entry.filter = parseExpression$1('(' + param.join(')&&(') + ')').$expr;
+    }
+
+    if ((param = stream.throttle) != null) {
+      entry.throttle = +param;
+    }
+
+    if ((param = stream.debounce) != null) {
+      entry.debounce = +param;
+    }
+
+    if (stream.consume) {
+      entry.consume = true;
+    }
+
+    return entry;
+  }
+
+  function filterMark(type, name, role) {
+    var item = 'event.item';
+    return item
+      + (type && type !== '*' ? '&&' + item + '.mark.marktype===\'' + type + '\'' : '')
+      + (role ? '&&' + item + '.mark.role===\'' + role + '\'' : '')
+      + (name ? '&&' + item + '.mark.name===\'' + name + '\'' : '');
+  }
+
+  /**
+   * Parse an event selector string.
+   * Returns an array of event stream definitions.
+   */
+  function selector(selector, source, marks) {
+    DEFAULT_SOURCE = source || VIEW;
+    MARKS = marks || DEFAULT_MARKS;
+    return parseMerge(selector.trim()).map(parseSelector);
+  }
+
+  var VIEW    = 'view',
+      LBRACK  = '[',
+      RBRACK  = ']',
+      LBRACE  = '{',
+      RBRACE  = '}',
+      COLON   = ':',
+      COMMA   = ',',
+      NAME    = '@',
+      GT      = '>',
+      ILLEGAL$1 = /[[\]{}]/,
+      DEFAULT_SOURCE,
+      MARKS,
+      DEFAULT_MARKS = {
+        '*': 1,
+        arc: 1,
+        area: 1,
+        group: 1,
+        image: 1,
+        line: 1,
+        path: 1,
+        rect: 1,
+        rule: 1,
+        shape: 1,
+        symbol: 1,
+        text: 1,
+        trail: 1
+      };
+
+  function isMarkType(type) {
+    return MARKS.hasOwnProperty(type);
+  }
+
+  function find$1(s, i, endChar, pushChar, popChar) {
+    var count = 0,
+        n = s.length,
+        c;
+    for (; i<n; ++i) {
+      c = s[i];
+      if (!count && c === endChar) return i;
+      else if (popChar && popChar.indexOf(c) >= 0) --count;
+      else if (pushChar && pushChar.indexOf(c) >= 0) ++count;
+    }
+    return i;
+  }
+
+  function parseMerge(s) {
+    var output = [],
+        start = 0,
+        n = s.length,
+        i = 0;
+
+    while (i < n) {
+      i = find$1(s, i, COMMA, LBRACK + LBRACE, RBRACK + RBRACE);
+      output.push(s.substring(start, i).trim());
+      start = ++i;
+    }
+
+    if (output.length === 0) {
+      throw 'Empty event selector: ' + s;
+    }
+    return output;
+  }
+
+  function parseSelector(s) {
+    return s[0] === '['
+      ? parseBetween(s)
+      : parseStream$1(s);
+  }
+
+  function parseBetween(s) {
+    var n = s.length,
+        i = 1,
+        b, stream;
+
+    i = find$1(s, i, RBRACK, LBRACK, RBRACK);
+    if (i === n) {
+      throw 'Empty between selector: ' + s;
+    }
+
+    b = parseMerge(s.substring(1, i));
+    if (b.length !== 2) {
+      throw 'Between selector must have two elements: ' + s;
+    }
+
+    s = s.slice(i + 1).trim();
+    if (s[0] !== GT) {
+      throw 'Expected \'>\' after between selector: ' + s;
+    }
+
+    b = b.map(parseSelector);
+
+    stream = parseSelector(s.slice(1).trim());
+    if (stream.between) {
+      return {
+        between: b,
+        stream: stream
+      };
+    } else {
+      stream.between = b;
+    }
+
+    return stream;
+  }
+
+  function parseStream$1(s) {
+    var stream = {source: DEFAULT_SOURCE},
+        source = [],
+        throttle = [0, 0],
+        markname = 0,
+        start = 0,
+        n = s.length,
+        i = 0, j,
+        filter;
+
+    // extract throttle from end
+    if (s[n-1] === RBRACE) {
+      i = s.lastIndexOf(LBRACE);
+      if (i >= 0) {
+        try {
+          throttle = parseThrottle(s.substring(i+1, n-1));
+        } catch (e) {
+          throw 'Invalid throttle specification: ' + s;
+        }
+        s = s.slice(0, i).trim();
+        n = s.length;
+      } else throw 'Unmatched right brace: ' + s;
+      i = 0;
+    }
+
+    if (!n) throw s;
+
+    // set name flag based on first char
+    if (s[0] === NAME) markname = ++i;
+
+    // extract first part of multi-part stream selector
+    j = find$1(s, i, COLON);
+    if (j < n) {
+      source.push(s.substring(start, j).trim());
+      start = i = ++j;
+    }
+
+    // extract remaining part of stream selector
+    i = find$1(s, i, LBRACK);
+    if (i === n) {
+      source.push(s.substring(start, n).trim());
+    } else {
+      source.push(s.substring(start, i).trim());
+      filter = [];
+      start = ++i;
+      if (start === n) throw 'Unmatched left bracket: ' + s;
+    }
+
+    // extract filters
+    while (i < n) {
+      i = find$1(s, i, RBRACK);
+      if (i === n) throw 'Unmatched left bracket: ' + s;
+      filter.push(s.substring(start, i).trim());
+      if (i < n-1 && s[++i] !== LBRACK) throw 'Expected left bracket: ' + s;
+      start = ++i;
+    }
+
+    // marshall event stream specification
+    if (!(n = source.length) || ILLEGAL$1.test(source[n-1])) {
+      throw 'Invalid event selector: ' + s;
+    }
+
+    if (n > 1) {
+      stream.type = source[1];
+      if (markname) {
+        stream.markname = source[0].slice(1);
+      } else if (isMarkType(source[0])) {
+        stream.marktype = source[0];
+      } else {
+        stream.source = source[0];
+      }
+    } else {
+      stream.type = source[0];
+    }
+    if (stream.type.slice(-1) === '!') {
+      stream.consume = true;
+      stream.type = stream.type.slice(0, -1);
+    }
+    if (filter != null) stream.filter = filter;
+    if (throttle[0]) stream.throttle = throttle[0];
+    if (throttle[1]) stream.debounce = throttle[1];
+
+    return stream;
+  }
+
+  function parseThrottle(s) {
+    var a = s.split(COMMA);
+    if (!s.length || a.length > 2) throw s;
+    return a.map(function(_) {
+      var x = +_;
+      if (x !== x) throw s;
+      return x;
+    });
+  }
+
+  var preamble = 'var datum=event.item&&event.item.datum;';
+
+  function parseUpdate(spec, scope, target) {
+    var events = spec.events,
+        update = spec.update,
+        encode = spec.encode,
+        sources = [],
+        entry = {target: target};
+
+    if (!events) {
+      error('Signal update missing events specification.');
+    }
+
+    // interpret as an event selector string
+    if (isString(events)) {
+      events = selector(events, scope.isSubscope() ? Scope : View);
+    }
+
+    // separate event streams from signal updates
+    events = array(events)
+      .filter(s => s.signal || s.scale ? (sources.push(s), 0) : 1);
+
+    // merge internal operator listeners
+    if (sources.length > 1) {
+      sources = [mergeSources(sources)];
+    }
+
+    // merge event streams, include as source
+    if (events.length) {
+      sources.push(events.length > 1 ? {merge: events} : events[0]);
+    }
+
+    if (encode != null) {
+      if (update) error('Signal encode and update are mutually exclusive.');
+      update = 'encode(item(),' + $(encode) + ')';
+    }
+
+    // resolve update value
+    entry.update = isString(update) ? parseExpression$1(update, scope, preamble)
+      : update.expr != null ? parseExpression$1(update.expr, scope, preamble)
+      : update.value != null ? update.value
+      : update.signal != null ? {
+          $expr:   '_.value',
+          $params: {value: scope.signalRef(update.signal)}
+        }
+      : error('Invalid signal update specification.');
+
+    if (spec.force) {
+      entry.options = {force: true};
+    }
+
+    sources.forEach(function(source) {
+      scope.addUpdate(extend(streamSource(source, scope), entry));
+    });
+  }
+
+  function streamSource(stream, scope) {
+    return {
+      source: stream.signal ? scope.signalRef(stream.signal)
+            : stream.scale ? scope.scaleRef(stream.scale)
+            : parseStream(stream, scope)
+    };
+  }
+
+  function mergeSources(sources) {
+    return {
+      signal: '['
+        + sources.map(s => s.scale ? 'scale("' + s.scale + '")' : s.signal)
+        + ']'
+    };
+  }
+
+  function parseSignalUpdates(signal, scope) {
+    var op = scope.getSignal(signal.name),
+        expr = signal.update;
+
+    if (signal.init) {
+      if (expr) {
+        error('Signals can not include both init and update expressions.');
+      } else {
+        expr = signal.init;
+        op.initonly = true;
+      }
+    }
+
+    if (expr) {
+      expr = parseExpression$1(expr, scope);
+      op.update = expr.$expr;
+      op.params = expr.$params;
+    }
+
+    if (signal.on) {
+      signal.on.forEach(function(_) {
+        parseUpdate(_, scope, op.id);
+      });
+    }
+  }
+
+  function transform$2(name) {
+    return function(params, value, parent) {
+      return entry(name, value, params || undefined, parent);
+    };
+  }
+
+  var Aggregate$1 = transform$2('aggregate');
+  var AxisTicks = transform$2('axisticks');
+  var Bound = transform$2('bound');
+  var Collect$1 = transform$2('collect');
+  var Compare$1 = transform$2('compare');
+  var DataJoin = transform$2('datajoin');
+  var Encode = transform$2('encode');
+  var Expression$1 = transform$2('expression');
+  var Facet$1 = transform$2('facet');
+  var Field$1 = transform$2('field');
+  var Key$1 = transform$2('key');
+  var LegendEntries = transform$2('legendentries');
+  var Load$1 = transform$2('load');
+  var Mark = transform$2('mark');
+  var MultiExtent$1 = transform$2('multiextent');
+  var MultiValues$1 = transform$2('multivalues');
+  var Overlap = transform$2('overlap');
+  var Params$1 = transform$2('params');
+  var PreFacet$1 = transform$2('prefacet');
+  var Projection = transform$2('projection');
+  var Proxy$1 = transform$2('proxy');
+  var Relay$1 = transform$2('relay');
+  var Render = transform$2('render');
+  var Scale = transform$2('scale');
+  var Sieve$1 = transform$2('sieve');
+  var SortItems = transform$2('sortitems');
+  var ViewLayout = transform$2('viewlayout');
+  var Values$1 = transform$2('values');
+
+  var FIELD_REF_ID = 0;
+
+  function initScale(spec, scope) {
+    var type = spec.type || 'linear';
+
+    if (!isValidScaleType(type)) {
+      error('Unrecognized scale type: ' + $(type));
+    }
+
+    scope.addScale(spec.name, {
+      type:   type,
+      domain: undefined
+    });
+  }
+
+  function parseScale(spec, scope) {
+    var params = scope.getScale(spec.name).params,
+        key;
+
+    params.domain = parseScaleDomain(spec.domain, spec, scope);
+
+    if (spec.range != null) {
+      params.range = parseScaleRange(spec, scope, params);
+    }
+
+    if (spec.interpolate != null) {
+      parseScaleInterpolate(spec.interpolate, params);
+    }
+
+    if (spec.nice != null) {
+      params.nice = parseScaleNice(spec.nice);
+    }
+
+    if (spec.bins != null) {
+      params.bins = parseScaleBins(spec.bins, scope);
+    }
+
+    for (key in spec) {
+      if (params.hasOwnProperty(key) || key === 'name') continue;
+      params[key] = parseLiteral(spec[key], scope);
+    }
+  }
+
+  function parseLiteral(v, scope) {
+    return !isObject(v) ? v
+      : v.signal ? scope.signalRef(v.signal)
+      : error('Unsupported object: ' + $(v));
+  }
+
+  function parseArray(v, scope) {
+    return v.signal
+      ? scope.signalRef(v.signal)
+      : v.map(v => parseLiteral(v, scope));
+  }
+
+  function dataLookupError(name) {
+    error('Can not find data set: ' + $(name));
+  }
+
+  // -- SCALE DOMAIN ----
+
+  function parseScaleDomain(domain, spec, scope) {
+    if (!domain) {
+      if (spec.domainMin != null || spec.domainMax != null) {
+        error('No scale domain defined for domainMin/domainMax to override.');
+      }
+      return; // default domain
+    }
+
+    return domain.signal ? scope.signalRef(domain.signal)
+      : (isArray(domain) ? explicitDomain
+      : domain.fields ? multipleDomain
+      : singularDomain)(domain, spec, scope);
+  }
+
+  function explicitDomain(domain, spec, scope) {
+    return domain.map(function(v) {
+      return parseLiteral(v, scope);
+    });
+  }
+
+  function singularDomain(domain, spec, scope) {
+    var data = scope.getData(domain.data);
+    if (!data) dataLookupError(domain.data);
+
+    return isDiscrete(spec.type)
+        ? data.valuesRef(scope, domain.field, parseSort(domain.sort, false))
+        : isQuantile(spec.type) ? data.domainRef(scope, domain.field)
+        : data.extentRef(scope, domain.field);
+  }
+
+  function multipleDomain(domain, spec, scope) {
+    var data = domain.data,
+        fields = domain.fields.reduce(function(dom, d) {
+          d = isString(d) ? {data: data, field: d}
+            : (isArray(d) || d.signal) ? fieldRef$1(d, scope)
+            : d;
+          dom.push(d);
+          return dom;
+        }, []);
+
+    return (isDiscrete(spec.type) ? ordinalMultipleDomain
+      : isQuantile(spec.type) ? quantileMultipleDomain
+      : numericMultipleDomain)(domain, scope, fields);
+  }
+
+  function fieldRef$1(data, scope) {
+    var name = '_:vega:_' + (FIELD_REF_ID++),
+        coll = Collect$1({});
+
+    if (isArray(data)) {
+      coll.value = {$ingest: data};
+    } else if (data.signal) {
+      var code = 'setdata(' + $(name) + ',' + data.signal + ')';
+      coll.params.input = scope.signalRef(code);
+    }
+    scope.addDataPipeline(name, [coll, Sieve$1({})]);
+    return {data: name, field: 'data'};
+  }
+
+  function ordinalMultipleDomain(domain, scope, fields) {
+    var counts, a, c, v;
+
+    // get value counts for each domain field
+    counts = fields.map(function(f) {
+      var data = scope.getData(f.data);
+      if (!data) dataLookupError(f.data);
+      return data.countsRef(scope, f.field);
+    });
+
+    // sum counts from all fields
+    a = scope.add(Aggregate$1({
+      groupby: keyFieldRef,
+      ops:['sum'], fields: [scope.fieldRef('count')], as:['count'],
+      pulse: counts
+    }));
+
+    // collect aggregate output
+    c = scope.add(Collect$1({pulse: ref(a)}));
+
+    // extract values for combined domain
+    v = scope.add(Values$1({
+      field: keyFieldRef,
+      sort:  scope.sortRef(parseSort(domain.sort, true)),
+      pulse: ref(c)
+    }));
+
+    return ref(v);
+  }
+
+  function parseSort(sort, multidomain) {
+    if (sort) {
+      if (!sort.field && !sort.op) {
+        if (isObject(sort)) sort.field = 'key';
+        else sort = {field: 'key'};
+      } else if (!sort.field && sort.op !== 'count') {
+        error('No field provided for sort aggregate op: ' + sort.op);
+      } else if (multidomain && sort.field) {
+        error('Multiple domain scales can not sort by field.');
+      } else if (multidomain && sort.op && sort.op !== 'count') {
+        error('Multiple domain scales support op count only.');
+      }
+    }
+    return sort;
+  }
+
+  function quantileMultipleDomain(domain, scope, fields) {
+    // get value arrays for each domain field
+    var values = fields.map(function(f) {
+      var data = scope.getData(f.data);
+      if (!data) dataLookupError(f.data);
+      return data.domainRef(scope, f.field);
+    });
+
+    // combine value arrays
+    return ref(scope.add(MultiValues$1({values: values})));
+  }
+
+  function numericMultipleDomain(domain, scope, fields) {
+    // get extents for each domain field
+    var extents = fields.map(function(f) {
+      var data = scope.getData(f.data);
+      if (!data) dataLookupError(f.data);
+      return data.extentRef(scope, f.field);
+    });
+
+    // combine extents
+    return ref(scope.add(MultiExtent$1({extents: extents})));
+  }
+
+  // -- SCALE BINS -----
+
+  function parseScaleBins(v, scope) {
+    return v.signal || isArray(v)
+      ? parseArray(v, scope)
+      : scope.objectProperty(v);
+  }
+
+  // -- SCALE NICE -----
+
+  function parseScaleNice(nice) {
+    return isObject(nice)
+      ? {
+          interval: parseLiteral(nice.interval),
+          step: parseLiteral(nice.step)
+        }
+      : parseLiteral(nice);
+  }
+
+  // -- SCALE INTERPOLATION -----
+
+  function parseScaleInterpolate(interpolate, params) {
+    params.interpolate = parseLiteral(interpolate.type || interpolate);
+    if (interpolate.gamma != null) {
+      params.interpolateGamma = parseLiteral(interpolate.gamma);
+    }
+  }
+
+  // -- SCALE RANGE -----
+
+  function parseScaleRange(spec, scope, params) {
+    var range = spec.range,
+        config = scope.config.range;
+
+    if (range.signal) {
+      return scope.signalRef(range.signal);
+    } else if (isString(range)) {
+      if (config && config.hasOwnProperty(range)) {
+        spec = extend({}, spec, {range: config[range]});
+        return parseScaleRange(spec, scope, params);
+      } else if (range === 'width') {
+        range = [0, {signal: 'width'}];
+      } else if (range === 'height') {
+        range = isDiscrete(spec.type)
+          ? [0, {signal: 'height'}]
+          : [{signal: 'height'}, 0];
+      } else {
+        error('Unrecognized scale range value: ' + $(range));
+      }
+    } else if (range.scheme) {
+      params.scheme = isArray(range.scheme)
+        ? parseArray(range.scheme, scope)
+        : parseLiteral(range.scheme, scope);
+      if (range.extent) params.schemeExtent = parseArray(range.extent, scope);
+      if (range.count) params.schemeCount = parseLiteral(range.count, scope);
+      return;
+    } else if (range.step) {
+      params.rangeStep = parseLiteral(range.step, scope);
+      return;
+    } else if (isDiscrete(spec.type) && !isArray(range)) {
+      return parseScaleDomain(range, spec, scope);
+    } else if (!isArray(range)) {
+      error('Unsupported range type: ' + $(range));
+    }
+
+    return range.map(v => (isArray(v) ? parseArray : parseLiteral)(v, scope));
+  }
+
+  function parseProjection(proj, scope) {
+    var params = {};
+
+    for (var name in proj) {
+      if (name === 'name') continue;
+      params[name] = parseParameter(proj[name], name, scope);
+    }
+
+    scope.addProjection(proj.name, params);
+  }
+
+  function parseParameter(_, name, scope) {
+    return isArray(_) ? _.map(function(_) { return parseParameter(_, name, scope); })
+      : !isObject(_) ? _
+      : _.signal ? scope.signalRef(_.signal)
+      : name === 'fit' ? _
+      : error('Unsupported parameter object: ' + $(_));
+  }
+
+  const Top$1 = 'top';
+  const Left$1 = 'left';
+  const Right$1 = 'right';
+  const Bottom$1 = 'bottom';
+  const Center = 'center';
+
+  const Vertical = 'vertical';
+
+  const Start$1 = 'start';
+  const Middle$1 = 'middle';
+  const End$1 = 'end';
+
+  const Index  = 'index';
+  const Label  = 'label';
+  const Offset = 'offset';
+  const Perc   = 'perc';
+  const Perc2  = 'perc2';
+  const Size   = 'size';
+  const Value  = 'value';
+
+  const GuideLabelStyle = 'guide-label';
+  const GuideTitleStyle = 'guide-title';
+  const GroupTitleStyle = 'group-title';
+
+  const Symbols$1 = 'symbol';
+  const Gradient$1 = 'gradient';
+  const Discrete = 'discrete';
+
+  // Encoding channels supported by legends
+  // In priority order of 'canonical' scale
+  const LegendScales = [
+    'size',
+    'shape',
+    'fill',
+    'stroke',
+    'strokeWidth',
+    'strokeDash',
+    'opacity'
+  ];
+
+  const Skip = {
+    name: 1,
+    interactive: 1
+  };
+
+  const zero$2 = {value: 0};
+  const one$2 = {value: 1};
+
+  var Skip$1 = toSet(['rule']),
+      Swap = toSet(['group', 'image', 'rect']);
+
+  function adjustSpatial(encode, marktype) {
+    var code = '';
+
+    if (Skip$1[marktype]) return code;
+
+    if (encode.x2) {
+      if (encode.x) {
+        if (Swap[marktype]) {
+          code += 'if(o.x>o.x2)$=o.x,o.x=o.x2,o.x2=$;';
+        }
+        code += 'o.width=o.x2-o.x;';
+      } else {
+        code += 'o.x=o.x2-(o.width||0);';
+      }
+    }
+
+    if (encode.xc) {
+      code += 'o.x=o.xc-(o.width||0)/2;';
+    }
+
+    if (encode.y2) {
+      if (encode.y) {
+        if (Swap[marktype]) {
+          code += 'if(o.y>o.y2)$=o.y,o.y=o.y2,o.y2=$;';
+        }
+        code += 'o.height=o.y2-o.y;';
+      } else {
+        code += 'o.y=o.y2-(o.height||0);';
+      }
+    }
+
+    if (encode.yc) {
+      code += 'o.y=o.yc-(o.height||0)/2;';
+    }
+
+    return code;
+  }
+
+  function color$2(enc, scope, params, fields) {
+    function color(type, x, y, z) {
+      var a = entry$1(null, x, scope, params, fields),
+          b = entry$1(null, y, scope, params, fields),
+          c = entry$1(null, z, scope, params, fields);
+      return 'this.' + type + '(' + [a, b, c].join(',') + ').toString()';
+    }
+
+    return (enc.c) ? color('hcl', enc.h, enc.c, enc.l)
+      : (enc.h || enc.s) ? color('hsl', enc.h, enc.s, enc.l)
+      : (enc.l || enc.a) ? color('lab', enc.l, enc.a, enc.b)
+      : (enc.r || enc.g || enc.b) ? color('rgb', enc.r, enc.g, enc.b)
+      : null;
+  }
+
+  function expression(code, scope, params, fields) {
+    var expr = parseExpression$1(code, scope);
+    expr.$fields.forEach(function(name) { fields[name] = 1; });
+    extend(params, expr.$params);
+    return expr.$expr;
+  }
+
+  function field$1(ref, scope, params, fields) {
+    return resolve$1(isObject(ref) ? ref : {datum: ref}, scope, params, fields);
+  }
+
+  function resolve$1(ref, scope, params, fields) {
+    var object, level, field;
+
+    if (ref.signal) {
+      object = 'datum';
+      field = expression(ref.signal, scope, params, fields);
+    } else if (ref.group || ref.parent) {
+      level = Math.max(1, ref.level || 1);
+      object = 'item';
+
+      while (level-- > 0) {
+        object += '.mark.group';
+      }
+
+      if (ref.parent) {
+        field = ref.parent;
+        object += '.datum';
+      } else {
+        field = ref.group;
+      }
+    } else if (ref.datum) {
+      object = 'datum';
+      field = ref.datum;
+    } else {
+      error('Invalid field reference: ' + $(ref));
+    }
+
+    if (!ref.signal) {
+      if (isString(field)) {
+        fields[field] = 1; // TODO review field tracking?
+        field = splitAccessPath(field).map($).join('][');
+      } else {
+        field = resolve$1(field, scope, params, fields);
+      }
+    }
+
+    return object + '[' + field + ']';
+  }
+
+  function scale$3(enc, value, scope, params, fields) {
+    var scale = getScale$1(enc.scale, scope, params, fields),
+        interp, func, flag;
+
+    if (enc.range != null) {
+      // pull value from scale range
+      interp = +enc.range;
+      func = scale + '.range()';
+      value = (interp === 0) ? (func + '[0]')
+        : '($=' + func + ',' + ((interp === 1) ? '$[$.length-1]'
+        : '$[0]+' + interp + '*($[$.length-1]-$[0])') + ')';
+    } else {
+      // run value through scale and/or pull scale bandwidth
+      if (value !== undefined) value = scale + '(' + value + ')';
+
+      if (enc.band && (flag = hasBandwidth(enc.scale, scope))) {
+        func = scale + '.bandwidth';
+        interp = +enc.band;
+        interp = func + '()' + (interp===1 ? '' : '*' + interp);
+
+        // if we don't know the scale type, check for bandwidth
+        if (flag < 0) interp = '(' + func + '?' + interp + ':0)';
+
+        value = (value ? value + '+' : '') + interp;
+
+        if (enc.extra) {
+          // include logic to handle extraneous elements
+          value = '(datum.extra?' + scale + '(datum.extra.value):' + value + ')';
+        }
+      }
+
+      if (value == null) value = '0';
+    }
+
+    return value;
+  }
+
+  function hasBandwidth(name, scope) {
+    if (!isString(name)) return -1;
+    var type = scope.scaleType(name);
+    return type === 'band' || type === 'point' ? 1 : 0;
+  }
+
+  function getScale$1(name, scope, params, fields) {
+    var scaleName;
+
+    if (isString(name)) {
+      // direct scale lookup; add scale as parameter
+      scaleName = ScalePrefix + name;
+      if (!params.hasOwnProperty(scaleName)) {
+        params[scaleName] = scope.scaleRef(name);
+      }
+      scaleName = $(scaleName);
+    } else {
+      // indirect scale lookup; add all scales as parameters
+      for (scaleName in scope.scales) {
+        params[ScalePrefix + scaleName] = scope.scaleRef(scaleName);
+      }
+      scaleName = $(ScalePrefix) + '+'
+        + (name.signal
+          ? '(' + expression(name.signal, scope, params, fields) + ')'
+          : field$1(name, scope, params, fields));
+    }
+
+    return '_[' + scaleName + ']';
+  }
+
+  function gradient$1(enc, scope, params, fields) {
+    return 'this.gradient('
+      + getScale$1(enc.gradient, scope, params, fields)
+      + ',' + $(enc.start)
+      + ',' + $(enc.stop)
+      + ',' + $(enc.count)
+      + ')';
+  }
+
+  function property(property, scope, params, fields) {
+    return isObject(property)
+        ? '(' + entry$1(null, property, scope, params, fields) + ')'
+        : property;
+  }
+
+  function entry$1(channel, enc, scope, params, fields) {
+    if (enc.gradient != null) {
+      return gradient$1(enc, scope, params, fields);
+    }
+
+    var value = enc.signal ? expression(enc.signal, scope, params, fields)
+      : enc.color ? color$2(enc.color, scope, params, fields)
+      : enc.field != null ? field$1(enc.field, scope, params, fields)
+      : enc.value !== undefined ? $(enc.value)
+      : undefined;
+
+    if (enc.scale != null) {
+      value = scale$3(enc, value, scope, params, fields);
+    }
+
+    if (value === undefined) {
+      value = null;
+    }
+
+    if (enc.exponent != null) {
+      value = 'Math.pow(' + value + ','
+        + property(enc.exponent, scope, params, fields) + ')';
+    }
+
+    if (enc.mult != null) {
+      value += '*' + property(enc.mult, scope, params, fields);
+    }
+
+    if (enc.offset != null) {
+      value += '+' + property(enc.offset, scope, params, fields);
+    }
+
+    if (enc.round) {
+      value = 'Math.round(' + value + ')';
+    }
+
+    return value;
+  }
+
+  function set(obj, key, value) {
+    const o = obj + '[' + $(key) + ']';
+    return `$=${value};if(${o}!==$)${o}=$,m=1;`;
+  }
+
+  function rule$1(channel, rules, scope, params, fields) {
+    var code = '';
+
+    rules.forEach(function(rule) {
+      var value = entry$1(channel, rule, scope, params, fields);
+      code += rule.test
+        ? expression(rule.test, scope, params, fields) + '?' + value + ':'
+        : value;
+    });
+
+    // if no else clause, terminate with null (vega/vega#1366)
+    if (peek(code) === ':') {
+      code += 'null';
+    }
+
+    return set('o', channel, code);
+  }
+
+  function parseEncode(encode, marktype, params, scope) {
+    var fields = {},
+        code = 'var o=item,datum=o.datum,m=0,$;',
+        channel, enc, value;
+
+    for (channel in encode) {
+      enc = encode[channel];
+      if (isArray(enc)) { // rule
+        code += rule$1(channel, enc, scope, params, fields);
+      } else {
+        value = entry$1(channel, enc, scope, params, fields);
+        code += set('o', channel, value);
+      }
+    }
+
+    code += adjustSpatial(encode, marktype);
+    code += 'return m;';
+
+    return {
+      $expr:   code,
+      $fields: Object.keys(fields),
+      $output: Object.keys(encode)
+    };
+  }
+
+  var MarkRole = 'mark';
+  var FrameRole$1 = 'frame';
+  var ScopeRole$1 = 'scope';
+
+  var AxisRole$1 = 'axis';
+  var AxisDomainRole = 'axis-domain';
+  var AxisGridRole = 'axis-grid';
+  var AxisLabelRole = 'axis-label';
+  var AxisTickRole = 'axis-tick';
+  var AxisTitleRole = 'axis-title';
+
+  var LegendRole$1 = 'legend';
+  var LegendBandRole = 'legend-band';
+  var LegendEntryRole = 'legend-entry';
+  var LegendGradientRole = 'legend-gradient';
+  var LegendLabelRole = 'legend-label';
+  var LegendSymbolRole = 'legend-symbol';
+  var LegendTitleRole = 'legend-title';
+
+  var TitleRole$1 = 'title';
+
+  function encoder(_) {
+    return isObject(_) ? extend({}, _) : {value: _};
+  }
+
+  function addEncode(object, name, value, set) {
+    if (value != null) {
+      if (isObject(value) && !isArray(value)) {
+        object.update[name] = value;
+      } else {
+        object[set || 'enter'][name] = {value: value};
+      }
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+
+  function addEncoders(object, enter, update) {
+    for (let name in enter) {
+      addEncode(object, name, enter[name]);
+    }
+    for (let name in update) {
+      addEncode(object, name, update[name], 'update');
+    }
+  }
+
+  function extendEncode(encode, extra, skip) {
+    for (var name in extra) {
+      if (skip && skip.hasOwnProperty(name)) continue;
+      encode[name] = extend(encode[name] || {}, extra[name]);
+    }
+    return encode;
+  }
+
+  function encoders(encode, type, role, style, scope, params) {
+    var enc, key;
+    params = params || {};
+    params.encoders = {$encode: (enc = {})};
+
+    encode = applyDefaults(encode, type, role, style, scope.config);
+
+    for (key in encode) {
+      enc[key] = parseEncode(encode[key], type, params, scope);
+    }
+
+    return params;
+  }
+
+  function applyDefaults(encode, type, role, style, config) {
+    var enter = {}, key, skip, props;
+
+    // ignore legend and axis
+    if (role == 'legend' || String(role).indexOf('axis') === 0) {
+      role = null;
+    }
+
+    // resolve mark config
+    props = role === FrameRole$1 ? config.group
+      : (role === MarkRole) ? extend({}, config.mark, config[type])
+      : null;
+
+    for (key in props) {
+      // do not apply defaults if relevant fields are defined
+      skip = has(key, encode)
+        || (key === 'fill' || key === 'stroke')
+        && (has('fill', encode) || has('stroke', encode));
+
+      if (!skip) enter[key] = defaultEncode(props[key]);
+    }
+
+    // resolve styles, apply with increasing precedence
+    array(style).forEach(function(name) {
+      var props = config.style && config.style[name];
+      for (var key in props) {
+        if (!has(key, encode)) {
+          enter[key] = defaultEncode(props[key]);
+        }
+      }
+    });
+
+    encode = extend({}, encode); // defensive copy
+    encode.enter = extend(enter, encode.enter);
+
+    return encode;
+  }
+
+  function defaultEncode(value) {
+    return value && value.signal
+      ? {signal: value.signal}
+      : {value: value};
+  }
+
+  function has(key, encode) {
+    return encode && (
+      (encode.enter && encode.enter[key]) ||
+      (encode.update && encode.update[key])
+    );
+  }
+
+  function guideMark(type, role, style, key, dataRef, encode, extras) {
+    return {
+      type:  type,
+      name:  extras ? extras.name : undefined,
+      role:  role,
+      style: (extras && extras.style) || style,
+      key:   key,
+      from:  dataRef,
+      interactive: !!(extras && extras.interactive),
+      encode: extendEncode(encode, extras, Skip)
+    };
+  }
+
+  function lookup$1(spec, config) {
+    const _ = name => value(spec[name], config[name]);
+
+    _.isVertical = s => Vertical === value(
+      spec.direction,
+      config.direction || (s ? config.symbolDirection : config.gradientDirection)
+    );
+
+    _.gradientLength = () => value(
+      spec.gradientLength,
+      config.gradientLength || config.gradientWidth
+    );
+
+    _.gradientThickness = () => value(
+      spec.gradientThickness,
+      config.gradientThickness || config.gradientHeight
+    );
+
+    _.entryColumns = () => value(
+      spec.columns,
+      value(config.columns, +_.isVertical(true))
+    );
+
+    return _;
+  }
+
+  function getEncoding(name, encode) {
+    var v = encode && (
+      (encode.update && encode.update[name]) ||
+      (encode.enter && encode.enter[name])
+    );
+    return v && v.signal ? v : v ? v.value : null;
+  }
+
+  function getStyle(name, scope, style) {
+    var s = scope.config.style[style];
+    return s && s[name];
+  }
+
+  function anchorExpr(s, e, m) {
+    return `item.anchor === "${Start$1}" ? ${s} : item.anchor === "${End$1}" ? ${e} : ${m}`;
+  }
+
+  const alignExpr = anchorExpr(
+    $(Left$1),
+    $(Right$1),
+    $(Center)
+  );
+
+  var GroupMark = 'group';
+  var RectMark = 'rect';
+  var RuleMark = 'rule';
+  var SymbolMark = 'symbol';
+  var TextMark = 'text';
+
+  function legendGradient(spec, scale, config, userEncode) {
+    var _ = lookup$1(spec, config),
+        vertical = _.isVertical(),
+        thickness = _.gradientThickness(),
+        length = _.gradientLength(),
+        encode, enter, start, stop, width, height;
+
+    if (vertical) {
+      start = [0, 1];
+      stop = [0, 0];
+      width = thickness;
+      height = length;
+    } else {
+      start = [0, 0];
+      stop = [1, 0];
+      width = length;
+      height = thickness;
+    }
+
+    encode = {
+      enter: enter = {
+        opacity: zero$2,
+        x: zero$2,
+        y: zero$2,
+        width: encoder(width),
+        height: encoder(height)
+      },
+      update: extend({}, enter, {
+        opacity: one$2,
+        fill: {gradient: scale, start: start, stop: stop}
+      }),
+      exit: {
+        opacity: zero$2
+      }
+    };
+
+    addEncoders(encode, {
+      stroke:      _('gradientStrokeColor'),
+      strokeWidth: _('gradientStrokeWidth')
+    }, { // update
+      opacity:     _('gradientOpacity')
+    });
+
+    return guideMark(RectMark, LegendGradientRole, null, undefined, undefined, encode, userEncode);
+  }
+
+  function legendGradientDiscrete(spec, scale, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config),
+        vertical = _.isVertical(),
+        thickness = _.gradientThickness(),
+        length = _.gradientLength(),
+        encode, enter, u, v, uu, vv, adjust = '';
+
+    vertical
+      ? (u = 'y', uu = 'y2', v = 'x', vv = 'width', adjust = '1-')
+      : (u = 'x', uu = 'x2', v = 'y', vv = 'height');
+
+    enter = {
+      opacity: zero$2,
+      fill: {scale: scale, field: Value}
+    };
+    enter[u]  = {signal: adjust + 'datum.' + Perc, mult: length};
+    enter[v]  = zero$2;
+    enter[uu] = {signal: adjust + 'datum.' + Perc2, mult: length};
+    enter[vv] = encoder(thickness);
+
+    encode = {
+      enter: enter,
+      update: extend({}, enter, {opacity: one$2}),
+      exit: {opacity: zero$2}
+    };
+
+    addEncoders(encode, {
+      stroke:      _('gradientStrokeColor'),
+      strokeWidth: _('gradientStrokeWidth')
+    }, { // update
+      opacity:     _('gradientOpacity')
+    });
+
+    return guideMark(RectMark, LegendBandRole, null, Value, dataRef, encode, userEncode);
+  }
+
+  const alignExpr$1 = `datum.${Perc}<=0?"${Left$1}":datum.${Perc}>=1?"${Right$1}":"${Center}"`,
+        baselineExpr = `datum.${Perc}<=0?"${Bottom$1}":datum.${Perc}>=1?"${Top$1}":"${Middle$1}"`;
+
+  function legendGradientLabels(spec, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config),
+        vertical = _.isVertical(),
+        thickness = encoder(_.gradientThickness()),
+        length = _.gradientLength(),
+        overlap = _('labelOverlap'),
+        separation = _('labelSeparation'),
+        encode, enter, update, u, v, adjust = '';
+
+    encode = {
+      enter: enter = {
+        opacity: zero$2
+      },
+      update: update = {
+        opacity: one$2,
+        text: {field: Label}
+      },
+      exit: {
+        opacity: zero$2
+      }
+    };
+
+    addEncoders(encode, {
+      fill:        _('labelColor'),
+      fillOpacity: _('labelOpacity'),
+      font:        _('labelFont'),
+      fontSize:    _('labelFontSize'),
+      fontStyle:   _('labelFontStyle'),
+      fontWeight:  _('labelFontWeight'),
+      limit:       value(spec.labelLimit, config.gradientLabelLimit)
+    });
+
+    if (vertical) {
+      enter.align = {value: 'left'};
+      enter.baseline = update.baseline = {signal: baselineExpr};
+      u = 'y'; v = 'x'; adjust = '1-';
+    } else {
+      enter.align = update.align = {signal: alignExpr$1};
+      enter.baseline = {value: 'top'};
+      u = 'x'; v = 'y';
+    }
+
+    enter[u] = update[u] = {signal: adjust + 'datum.' + Perc, mult: length};
+
+    enter[v] = update[v] = thickness;
+    thickness.offset = value(spec.labelOffset, config.gradientLabelOffset) || 0;
+
+    spec = guideMark(TextMark, LegendLabelRole, GuideLabelStyle, Value, dataRef, encode, userEncode);
+    if (overlap) {
+      spec.overlap = {
+        separation: separation,
+        method: overlap,
+        order: 'datum.' + Index
+      };
+    }
+    return spec;
+  }
+
+  function guideGroup(role, style, name, dataRef, interactive, encode, marks, layout) {
+    return {
+      type: GroupMark,
+      name: name,
+      role: role,
+      style: style,
+      from: dataRef,
+      interactive: interactive || false,
+      encode: encode,
+      marks: marks,
+      layout: layout
+    };
+  }
+
+  // userEncode is top-level, includes entries, symbols, labels
+  function legendSymbolGroups(spec, config, userEncode, dataRef, columns) {
+    var _ = lookup$1(spec, config),
+        entries = userEncode.entries,
+        interactive = !!(entries && entries.interactive),
+        name = entries ? entries.name : undefined,
+        height = _('clipHeight'),
+        symbolOffset = _('symbolOffset'),
+        valueRef = {data: 'value'},
+        encode = {},
+        xSignal = `${columns} ? datum.${Offset} : datum.${Size}`,
+        yEncode = height ? encoder(height) : {field: Size},
+        index = `datum.${Index}`,
+        ncols = `max(1, ${columns})`,
+        enter, update, labelOffset, symbols, labels, nrows, sort;
+
+    yEncode.mult = 0.5;
+
+    // -- LEGEND SYMBOLS --
+    encode = {
+      enter:  enter = {
+        opacity: zero$2,
+        x: {signal: xSignal, mult: 0.5, offset: symbolOffset},
+        y: yEncode
+      },
+      update: update = {
+        opacity: one$2,
+        x: enter.x,
+        y: enter.y
+      },
+      exit: {
+        opacity: zero$2
+      }
+    };
+
+    if (!spec.fill) {
+      addEncoders(encode, {
+        fill:   config.symbolBaseFillColor,
+        stroke: config.symbolBaseStrokeColor
+      });
+    }
+
+    addEncoders(encode, {
+      fill:             _('symbolFillColor'),
+      shape:            _('symbolType'),
+      size:             _('symbolSize'),
+      stroke:           _('symbolStrokeColor'),
+      strokeDash:       _('symbolDash'),
+      strokeDashOffset: _('symbolDashOffset'),
+      strokeWidth:      _('symbolStrokeWidth')
+    }, { // update
+      opacity:          _('symbolOpacity')
+    });
+
+    LegendScales.forEach(function(scale) {
+      if (spec[scale]) {
+        update[scale] = enter[scale] = {scale: spec[scale], field: Value};
+      }
+    });
+
+    symbols = guideMark(
+      SymbolMark, LegendSymbolRole, null,
+      Value, valueRef, encode, userEncode.symbols
+    );
+    if (height) symbols.clip = true;
+
+    // -- LEGEND LABELS --
+    labelOffset = encoder(symbolOffset);
+    labelOffset.offset = _('labelOffset');
+
+    encode = {
+      enter:  enter = {
+        opacity: zero$2,
+        x: {signal: xSignal, offset: labelOffset},
+        y: yEncode
+      },
+      update: update = {
+        opacity: one$2,
+        text: {field: Label},
+        x: enter.x,
+        y: enter.y
+      },
+      exit: {
+        opacity: zero$2
+      }
+    };
+
+    addEncoders(encode, {
+      align:       _('labelAlign'),
+      baseline:    _('labelBaseline'),
+      fill:        _('labelColor'),
+      fillOpacity: _('labelOpacity'),
+      font:        _('labelFont'),
+      fontSize:    _('labelFontSize'),
+      fontStyle:   _('labelFontStyle'),
+      fontWeight:  _('labelFontWeight'),
+      limit:       _('labelLimit')
+    });
+
+    labels = guideMark(
+      TextMark, LegendLabelRole, GuideLabelStyle,
+      Value, valueRef, encode, userEncode.labels
+    );
+
+    // -- LEGEND ENTRY GROUPS --
+    encode = {
+      enter: {
+        noBound: {value: !height}, // ignore width/height in bounds calc
+        width: zero$2,
+        height: height ? encoder(height) : zero$2,
+        opacity: zero$2
+      },
+      exit: {opacity: zero$2},
+      update: update = {
+        opacity: one$2,
+        row: {signal: null},
+        column: {signal: null}
+      }
+    };
+
+    // annotate and sort groups to ensure correct ordering
+    if (_.isVertical(true)) {
+      nrows = `ceil(item.mark.items.length / ${ncols})`;
+      update.row.signal = `${index}%${nrows}`;
+      update.column.signal = `floor(${index} / ${nrows})`;
+      sort = {field: ['row', index]};
+    } else {
+      update.row.signal = `floor(${index} / ${ncols})`;
+      update.column.signal = `${index} % ${ncols}`;
+      sort = {field: index};
+    }
+    // handle zero column case (implies infinite columns)
+    update.column.signal = `${columns}?${update.column.signal}:${index}`;
+
+    // facet legend entries into sub-groups
+    dataRef = {facet: {data: dataRef, name: 'value', groupby: Index}};
+
+    spec = guideGroup(
+      ScopeRole$1, null, name, dataRef, interactive,
+      extendEncode(encode, entries, Skip), [symbols, labels]
+    );
+    spec.sort = sort;
+    return spec;
+  }
+
+  function legendSymbolLayout(spec, config) {
+    const _ = lookup$1(spec, config);
+
+    // layout parameters for legend entries
+    return {
+      align:   _('gridAlign'),
+      columns: _.entryColumns(),
+      center:  {
+        row: true,
+        column: false
+      },
+      padding: {
+        row:    _('rowPadding'),
+        column: _('columnPadding')
+      }
+    };
+  }
+
+  // expression logic for align, anchor, angle, and baseline calculation
+  const isL = 'item.orient === "left"',
+        isR = 'item.orient === "right"',
+        isLR = `(${isL} || ${isR})`,
+        isVG = `datum.vgrad && ${isLR}`,
+        baseline = anchorExpr('"top"', '"bottom"', '"middle"'),
+        alignFlip = anchorExpr('"right"', '"left"', '"center"'),
+        exprAlign = `datum.vgrad && ${isR} ? (${alignFlip}) : (${isLR} && !(datum.vgrad && ${isL})) ? "left" : ${alignExpr}`,
+        exprAnchor = `item._anchor || (${isLR} ? "middle" : "start")`,
+        exprAngle = `${isVG} ? (${isL} ? -90 : 90) : 0`,
+        exprBaseline = `${isLR} ? (datum.vgrad ? (${isR} ? "bottom" : "top") : ${baseline}) : "top"`;
+
+  function legendTitle(spec, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config), encode;
+
+    encode = {
+      enter: {opacity: zero$2},
+      update: {
+        opacity: one$2,
+        x: {field: {group: 'padding'}},
+        y: {field: {group: 'padding'}}
+      },
+      exit: {opacity: zero$2}
+    };
+
+    addEncoders(encode, {
+      orient:      _('titleOrient'),
+      _anchor:     _('titleAnchor'),
+      anchor:      {signal: exprAnchor},
+      angle:       {signal: exprAngle},
+      align:       {signal: exprAlign},
+      baseline:    {signal: exprBaseline},
+      text:        spec.title,
+      fill:        _('titleColor'),
+      fillOpacity: _('titleOpacity'),
+      font:        _('titleFont'),
+      fontSize:    _('titleFontSize'),
+      fontStyle:   _('titleFontStyle'),
+      fontWeight:  _('titleFontWeight'),
+      limit:       _('titleLimit')
+    }, { // require update
+      align:       _('titleAlign'),
+      baseline:    _('titleBaseline'),
+    });
+
+    return guideMark(TextMark, LegendTitleRole, GuideTitleStyle, null, dataRef, encode, userEncode);
+  }
+
+  function clip$3(clip, scope) {
+    var expr;
+
+    if (isObject(clip)) {
+      if (clip.signal) {
+        expr = clip.signal;
+      } else if (clip.path) {
+        expr = 'pathShape(' + param(clip.path) + ')';
+      } else if (clip.sphere) {
+        expr = 'geoShape(' + param(clip.sphere) + ', {type: "Sphere"})';
+      }
+    }
+
+    return expr
+      ? scope.signalRef(expr)
+      : !!clip;
+  }
+
+  function param(value) {
+    return isObject(value) && value.signal
+      ? value.signal
+      : $(value);
+  }
+
+  function getRole(spec) {
+    var role = spec.role || '';
+    return (!role.indexOf('axis') || !role.indexOf('legend'))
+      ? role
+      : spec.type === GroupMark ? ScopeRole$1 : (role || MarkRole);
+  }
+
+  function definition$1(spec) {
+    return {
+      marktype:    spec.type,
+      name:        spec.name || undefined,
+      role:        spec.role || getRole(spec),
+      zindex:      +spec.zindex || undefined
+    };
+  }
+
+  function interactive(spec, scope) {
+    return spec && spec.signal ? scope.signalRef(spec.signal)
+      : spec === false ? false
+      : true;
+  }
+
+  /**
+   * Parse a data transform specification.
+   */
+  function parseTransform(spec, scope) {
+    var def = definition(spec.type);
+    if (!def) error('Unrecognized transform type: ' + $(spec.type));
+
+    var t = entry(def.type.toLowerCase(), null, parseParameters(def, spec, scope));
+    if (spec.signal) scope.addSignal(spec.signal, scope.proxy(t));
+    t.metadata = def.metadata || {};
+
+    return t;
+  }
+
+  /**
+   * Parse all parameters of a data transform.
+   */
+  function parseParameters(def, spec, scope) {
+    var params = {}, pdef, i, n;
+    for (i=0, n=def.params.length; i<n; ++i) {
+      pdef = def.params[i];
+      params[pdef.name] = parseParameter$1(pdef, spec, scope);
+    }
+    return params;
+  }
+
+  /**
+   * Parse a data transform parameter.
+   */
+  function parseParameter$1(def, spec, scope) {
+    var type = def.type,
+        value = spec[def.name];
+
+    if (type === 'index') {
+      return parseIndexParameter(def, spec, scope);
+    } else if (value === undefined) {
+      if (def.required) {
+        error('Missing required ' + $(spec.type)
+            + ' parameter: ' + $(def.name));
+      }
+      return;
+    } else if (type === 'param') {
+      return parseSubParameters(def, spec, scope);
+    } else if (type === 'projection') {
+      return scope.projectionRef(spec[def.name]);
+    }
+
+    return def.array && !isSignal(value)
+      ? value.map(function(v) { return parameterValue(def, v, scope); })
+      : parameterValue(def, value, scope);
+  }
+
+  /**
+   * Parse a single parameter value.
+   */
+  function parameterValue(def, value, scope) {
+    var type = def.type;
+
+    if (isSignal(value)) {
+      return isExpr$1(type) ? error('Expression references can not be signals.')
+           : isField(type) ? scope.fieldRef(value)
+           : isCompare(type) ? scope.compareRef(value)
+           : scope.signalRef(value.signal);
+    } else {
+      var expr = def.expr || isField(type);
+      return expr && outerExpr(value) ? scope.exprRef(value.expr, value.as)
+           : expr && outerField(value) ? fieldRef(value.field, value.as)
+           : isExpr$1(type) ? parseExpression$1(value, scope)
+           : isData(type) ? ref(scope.getData(value).values)
+           : isField(type) ? fieldRef(value)
+           : isCompare(type) ? scope.compareRef(value)
+           : value;
+    }
+  }
+
+  /**
+   * Parse parameter for accessing an index of another data set.
+   */
+  function parseIndexParameter(def, spec, scope) {
+    if (!isString(spec.from)) {
+      error('Lookup "from" parameter must be a string literal.');
+    }
+    return scope.getData(spec.from).lookupRef(scope, spec.key);
+  }
+
+  /**
+   * Parse a parameter that contains one or more sub-parameter objects.
+   */
+  function parseSubParameters(def, spec, scope) {
+    var value = spec[def.name];
+
+    if (def.array) {
+      if (!isArray(value)) { // signals not allowed!
+        error('Expected an array of sub-parameters. Instead: ' + $(value));
+      }
+      return value.map(function(v) {
+        return parseSubParameter(def, v, scope);
+      });
+    } else {
+      return parseSubParameter(def, value, scope);
+    }
+  }
+
+  /**
+   * Parse a sub-parameter object.
+   */
+  function parseSubParameter(def, value, scope) {
+    var params, pdef, k, i, n;
+
+    // loop over defs to find matching key
+    for (i=0, n=def.params.length; i<n; ++i) {
+      pdef = def.params[i];
+      for (k in pdef.key) {
+        if (pdef.key[k] !== value[k]) { pdef = null; break; }
+      }
+      if (pdef) break;
+    }
+    // raise error if matching key not found
+    if (!pdef) error('Unsupported parameter: ' + $(value));
+
+    // parse params, create Params transform, return ref
+    params = extend(parseParameters(pdef, value, scope), pdef.key);
+    return ref(scope.add(Params$1(params)));
+  }
+
+  // -- Utilities -----
+
+  function outerExpr(_) {
+    return _ && _.expr;
+  }
+
+  function outerField(_) {
+    return _ && _.field;
+  }
+
+  function isData(_) {
+    return _ === 'data';
+  }
+
+  function isExpr$1(_) {
+    return _ === 'expr';
+  }
+
+  function isField(_) {
+    return _ === 'field';
+  }
+
+  function isCompare(_) {
+    return _ === 'compare'
+  }
+
+  function parseData(from, group, scope) {
+    var facet, key, op, dataRef, parent;
+
+    // if no source data, generate singleton datum
+    if (!from) {
+      dataRef = ref(scope.add(Collect$1(null, [{}])));
+    }
+
+    // if faceted, process facet specification
+    else if (facet = from.facet) {
+      if (!group) error('Only group marks can be faceted.');
+
+      // use pre-faceted source data, if available
+      if (facet.field != null) {
+        dataRef = parent = getDataRef(facet, scope);
+      } else {
+        // generate facet aggregates if no direct data specification
+        if (!from.data) {
+          op = parseTransform(extend({
+            type:    'aggregate',
+            groupby: array(facet.groupby)
+          }, facet.aggregate), scope);
+          op.params.key = scope.keyRef(facet.groupby);
+          op.params.pulse = getDataRef(facet, scope);
+          dataRef = parent = ref(scope.add(op));
+        } else {
+          parent = ref(scope.getData(from.data).aggregate);
+        }
+
+        key = scope.keyRef(facet.groupby, true);
+      }
+    }
+
+    // if not yet defined, get source data reference
+    if (!dataRef) {
+      dataRef = getDataRef(from, scope);
+    }
+
+    return {
+      key: key,
+      pulse: dataRef,
+      parent: parent
+    };
+  }
+
+  function getDataRef(from, scope) {
+    return from.$ref ? from
+      : from.data && from.data.$ref ? from.data
+      : ref(scope.getData(from.data).output);
+  }
+
+  function DataScope(scope, input, output, values, aggr) {
+    this.scope = scope;   // parent scope object
+    this.input = input;   // first operator in pipeline (tuple input)
+    this.output = output; // last operator in pipeline (tuple output)
+    this.values = values; // operator for accessing tuples (but not tuple flow)
+
+    // last aggregate in transform pipeline
+    this.aggregate = aggr;
+
+    // lookup table of field indices
+    this.index = {};
+  }
+
+  DataScope.fromEntries = function(scope, entries) {
+    var n = entries.length,
+        i = 1,
+        input  = entries[0],
+        values = entries[n-1],
+        output = entries[n-2],
+        aggr = null;
+
+    if (input && input.type === 'load') {
+      input = entries[1];
+    }
+
+    // add operator entries to this scope, wire up pulse chain
+    scope.add(entries[0]);
+    for (; i<n; ++i) {
+      entries[i].params.pulse = ref(entries[i-1]);
+      scope.add(entries[i]);
+      if (entries[i].type === 'aggregate') aggr = entries[i];
+    }
+
+    return new DataScope(scope, input, output, values, aggr);
+  };
+
+  var prototype$L = DataScope.prototype;
+
+  prototype$L.countsRef = function(scope, field, sort) {
+    var ds = this,
+        cache = ds.counts || (ds.counts = {}),
+        k = fieldKey(field), v, a, p;
+
+    if (k != null) {
+      scope = ds.scope;
+      v = cache[k];
+    }
+
+    if (!v) {
+      p = {
+        groupby: scope.fieldRef(field, 'key'),
+        pulse: ref(ds.output)
+      };
+      if (sort && sort.field) addSortField(scope, p, sort);
+      a = scope.add(Aggregate$1(p));
+      v = scope.add(Collect$1({pulse: ref(a)}));
+      v = {agg: a, ref: ref(v)};
+      if (k != null) cache[k] = v;
+    } else if (sort && sort.field) {
+      addSortField(scope, v.agg.params, sort);
+    }
+
+    return v.ref;
+  };
+
+  function fieldKey(field) {
+    return isString(field) ? field : null;
+  }
+
+  function addSortField(scope, p, sort) {
+    var as = aggrField(sort.op, sort.field), s;
+
+    if (p.ops) {
+      for (var i=0, n=p.as.length; i<n; ++i) {
+        if (p.as[i] === as) return;
+      }
+    } else {
+      p.ops = ['count'];
+      p.fields = [null];
+      p.as = ['count'];
+    }
+    if (sort.op) {
+      p.ops.push((s=sort.op.signal) ? scope.signalRef(s) : sort.op);
+      p.fields.push(scope.fieldRef(sort.field));
+      p.as.push(as);
+    }
+  }
+
+  function cache(scope, ds, name, optype, field, counts, index) {
+    var cache = ds[name] || (ds[name] = {}),
+        sort = sortKey(counts),
+        k = fieldKey(field), v, op;
+
+    if (k != null) {
+      scope = ds.scope;
+      k = k + (sort ? '|' + sort : '');
+      v = cache[k];
+    }
+
+    if (!v) {
+      var params = counts
+        ? {field: keyFieldRef, pulse: ds.countsRef(scope, field, counts)}
+        : {field: scope.fieldRef(field), pulse: ref(ds.output)};
+      if (sort) params.sort = scope.sortRef(counts);
+      op = scope.add(entry(optype, undefined, params));
+      if (index) ds.index[field] = op;
+      v = ref(op);
+      if (k != null) cache[k] = v;
+    }
+    return v;
+  }
+
+  prototype$L.tuplesRef = function() {
+    return ref(this.values);
+  };
+
+  prototype$L.extentRef = function(scope, field) {
+    return cache(scope, this, 'extent', 'extent', field, false);
+  };
+
+  prototype$L.domainRef = function(scope, field) {
+    return cache(scope, this, 'domain', 'values', field, false);
+  };
+
+  prototype$L.valuesRef = function(scope, field, sort) {
+    return cache(scope, this, 'vals', 'values', field, sort || true);
+  };
+
+  prototype$L.lookupRef = function(scope, field) {
+    return cache(scope, this, 'lookup', 'tupleindex', field, false);
+  };
+
+  prototype$L.indataRef = function(scope, field) {
+    return cache(scope, this, 'indata', 'tupleindex', field, true, true);
+  };
+
+  function parseFacet(spec, scope, group) {
+    var facet = spec.from.facet,
+        name = facet.name,
+        data = getDataRef(facet, scope),
+        subscope, source, values, op;
+
+    if (!facet.name) {
+      error('Facet must have a name: ' + $(facet));
+    }
+    if (!facet.data) {
+      error('Facet must reference a data set: ' + $(facet));
+    }
+
+    if (facet.field) {
+      op = scope.add(PreFacet$1({
+        field: scope.fieldRef(facet.field),
+        pulse: data
+      }));
+    } else if (facet.groupby) {
+      op = scope.add(Facet$1({
+        key:   scope.keyRef(facet.groupby),
+        group: ref(scope.proxy(group.parent)),
+        pulse: data
+      }));
+    } else {
+      error('Facet must specify groupby or field: ' + $(facet));
+    }
+
+    // initialize facet subscope
+    subscope = scope.fork();
+    source = subscope.add(Collect$1());
+    values = subscope.add(Sieve$1({pulse: ref(source)}));
+    subscope.addData(name, new DataScope(subscope, source, source, values));
+    subscope.addSignal('parent', null);
+
+    // parse faceted subflow
+    op.params.subflow = {
+      $subflow: parseSpec(spec, subscope).toRuntime()
+    };
+  }
+
+  function parseSubflow(spec, scope, input) {
+    var op = scope.add(PreFacet$1({pulse: input.pulse})),
+        subscope = scope.fork();
+
+    subscope.add(Sieve$1());
+    subscope.addSignal('parent', null);
+
+    // parse group mark subflow
+    op.params.subflow = {
+      $subflow: parseSpec(spec, subscope).toRuntime()
+    };
+  }
+
+  function parseTrigger(spec, scope, name) {
+    var remove = spec.remove,
+        insert = spec.insert,
+        toggle = spec.toggle,
+        modify = spec.modify,
+        values = spec.values,
+        op = scope.add(operator()),
+        update, expr;
+
+    update = 'if(' + spec.trigger + ',modify("'
+      + name + '",'
+      + [insert, remove, toggle, modify, values]
+          .map(function(_) { return _ == null ? 'null' : _; })
+          .join(',')
+      + '),0)';
+
+    expr = parseExpression$1(update, scope);
+    op.update = expr.$expr;
+    op.params = expr.$params;
+  }
+
+  function parseMark(spec, scope) {
+    var role = getRole(spec),
+        group = spec.type === GroupMark,
+        facet = spec.from && spec.from.facet,
+        layout = spec.layout || role === ScopeRole$1 || role === FrameRole$1,
+        nested = role === MarkRole || layout || facet,
+        overlap = spec.overlap,
+        ops, op, input, store, enc, bound, render, sieve, name,
+        joinRef, markRef, encodeRef, layoutRef, boundRef;
+
+    // resolve input data
+    input = parseData(spec.from, group, scope);
+
+    // data join to map tuples to visual items
+    op = scope.add(DataJoin({
+      key:   input.key || (spec.key ? fieldRef(spec.key) : undefined),
+      pulse: input.pulse,
+      clean: !group
+    }));
+    joinRef = ref(op);
+
+    // collect visual items
+    op = store = scope.add(Collect$1({pulse: joinRef}));
+
+    // connect visual items to scenegraph
+    op = scope.add(Mark({
+      markdef:     definition$1(spec),
+      interactive: interactive(spec.interactive, scope),
+      clip:        clip$3(spec.clip, scope),
+      context:     {$context: true},
+      groups:      scope.lookup(),
+      parent:      scope.signals.parent ? scope.signalRef('parent') : null,
+      index:       scope.markpath(),
+      pulse:       ref(op)
+    }));
+    markRef = ref(op);
+
+    // add visual encoders
+    op = enc = scope.add(Encode(encoders(
+      spec.encode, spec.type, role, spec.style, scope,
+      {mod: false, pulse: markRef}
+    )));
+
+    // monitor parent marks to propagate changes
+    op.params.parent = scope.encode();
+
+    // add post-encoding transforms, if defined
+    if (spec.transform) {
+      spec.transform.forEach(function(_) {
+        const tx = parseTransform(_, scope),
+              md = tx.metadata;
+        if (md.generates || md.changes) {
+          error('Mark transforms should not generate new data.');
+        }
+        if (!md.nomod) enc.params.mod = true; // update encode mod handling
+        tx.params.pulse = ref(op);
+        scope.add(op = tx);
+      });
+    }
+
+    // if item sort specified, perform post-encoding
+    if (spec.sort) {
+      op = scope.add(SortItems({
+        sort:  scope.compareRef(spec.sort, true), // stable sort
+        pulse: ref(op)
+      }));
+    }
+
+    encodeRef = ref(op);
+
+    // add view layout operator if needed
+    if (facet || layout) {
+      layout = scope.add(ViewLayout({
+        layout:   scope.objectProperty(spec.layout),
+        legends:  scope.legends,
+        mark:     markRef,
+        pulse:    encodeRef
+      }));
+      layoutRef = ref(layout);
+    }
+
+    // compute bounding boxes
+    bound = scope.add(Bound({mark: markRef, pulse: layoutRef || encodeRef}));
+    boundRef = ref(bound);
+
+    // if group mark, recurse to parse nested content
+    if (group) {
+      // juggle layout & bounds to ensure they run *after* any faceting transforms
+      if (nested) { ops = scope.operators; ops.pop(); if (layout) ops.pop(); }
+
+      scope.pushState(encodeRef, layoutRef || boundRef, joinRef);
+      facet ? parseFacet(spec, scope, input)          // explicit facet
+          : nested ? parseSubflow(spec, scope, input) // standard mark group
+          : parseSpec(spec, scope); // guide group, we can avoid nested scopes
+      scope.popState();
+
+      if (nested) { if (layout) ops.push(layout); ops.push(bound); }
+    }
+
+    // if requested, add overlap removal transform
+    if (overlap) {
+      boundRef = parseOverlap(overlap, boundRef, scope);
+    }
+
+    // render / sieve items
+    render = scope.add(Render({pulse: boundRef}));
+    sieve = scope.add(Sieve$1({pulse: ref(render)}, undefined, scope.parent()));
+
+    // if mark is named, make accessible as reactive geometry
+    // add trigger updates if defined
+    if (spec.name != null) {
+      name = spec.name;
+      scope.addData(name, new DataScope(scope, store, render, sieve));
+      if (spec.on) spec.on.forEach(function(on) {
+        if (on.insert || on.remove || on.toggle) {
+          error('Marks only support modify triggers.');
+        }
+        parseTrigger(on, scope, name);
+      });
+    }
+  }
+
+  function parseOverlap(overlap, source, scope) {
+    var method = overlap.method,
+        bound = overlap.bound,
+        sep = overlap.separation, tol;
+
+    var params = {
+      separation: isSignal(sep) ? scope.signalRef(sep.signal) : sep,
+      method: isSignal(method) ? scope.signalRef(method.signal) : method,
+      pulse:  source
+    };
+
+    if (overlap.order) {
+      params.sort = scope.compareRef({field: overlap.order});
+    }
+
+    if (bound) {
+      tol = bound.tolerance;
+      params.boundTolerance = isSignal(tol) ? scope.signalRef(tol.signal) : +tol;
+      params.boundScale = scope.scaleRef(bound.scale);
+      params.boundOrient = bound.orient;
+    }
+
+    return ref(scope.add(Overlap(params)));
+  }
+
+  function parseLegend(spec, scope) {
+    var config = scope.config.legend,
+        encode = spec.encode || {},
+        legendEncode = encode.legend || {},
+        name = legendEncode.name || undefined,
+        interactive = legendEncode.interactive,
+        style = legendEncode.style,
+        _ = lookup$1(spec, config),
+        entryEncode, entryLayout, params, children,
+        type, datum, dataRef, entryRef, group;
+
+    // resolve 'canonical' scale name
+    var scale = LegendScales.reduce(function(a, b) { return a || spec[b]; }, 0);
+    if (!scale) error('Missing valid scale for legend.');
+
+    // resolve legend type (symbol, gradient, or discrete gradient)
+    type = legendType(spec, scope.scaleType(scale));
+
+    // single-element data source for legend group
+    datum = {
+      title:  spec.title != null,
+      type:   type,
+      vgrad:  type !== 'symbol' &&  _.isVertical()
+    };
+    dataRef = ref(scope.add(Collect$1(null, [datum])));
+
+    // encoding properties for legend group
+    legendEncode = extendEncode(
+      buildLegendEncode(_, config), legendEncode, Skip
+    );
+
+    // encoding properties for legend entry sub-group
+    entryEncode = {enter: {x: {value: 0}, y: {value: 0}}};
+
+    // data source for legend values
+    entryRef = ref(scope.add(LegendEntries(params = {
+      type:    type,
+      scale:   scope.scaleRef(scale),
+      count:   scope.objectProperty(spec.tickCount),
+      values:  scope.objectProperty(spec.values),
+      minstep: scope.property(spec.tickMinStep),
+      formatType: scope.property(spec.formatType),
+      formatSpecifier: scope.property(spec.format)
+    })));
+
+    // continuous gradient legend
+    if (type === Gradient$1) {
+      children = [
+        legendGradient(spec, scale, config, encode.gradient),
+        legendGradientLabels(spec, config, encode.labels, entryRef)
+      ];
+      // adjust default tick count based on the gradient length
+      params.count = params.count || scope.signalRef(
+        `max(2,2*floor((${deref(_.gradientLength())})/100))`
+      );
+    }
+
+    // discrete gradient legend
+    else if (type === Discrete) {
+      children = [
+        legendGradientDiscrete(spec, scale, config, encode.gradient, entryRef),
+        legendGradientLabels(spec, config, encode.labels, entryRef)
+      ];
+    }
+
+    // symbol legend
+    else {
+      // determine legend symbol group layout
+      entryLayout = legendSymbolLayout(spec, config);
+      children = [
+        legendSymbolGroups(spec, config, encode, entryRef, deref(entryLayout.columns))
+      ];
+      // pass symbol size information to legend entry generator
+      params.size = sizeExpression(spec, scope, children[0].marks);
+    }
+
+    // generate legend marks
+    children = [
+      guideGroup(LegendEntryRole, null, null, dataRef, interactive,
+                 entryEncode, children, entryLayout)
+    ];
+
+    // include legend title if defined
+    if (datum.title) {
+      children.push(legendTitle(spec, config, encode.title, dataRef));
+    }
+
+    // build legend specification
+    group = guideGroup(LegendRole$1, style, name, dataRef, interactive, legendEncode, children);
+    if (spec.zindex) group.zindex = spec.zindex;
+
+    // parse legend specification
+    return parseMark(group, scope);
+  }
+
+  function legendType(spec, scaleType) {
+    var type = spec.type || Symbols$1;
+
+    if (!spec.type && scaleCount(spec) === 1 && (spec.fill || spec.stroke)) {
+      type = isContinuous(scaleType) ? Gradient$1
+        : isDiscretizing(scaleType) ? Discrete
+        : Symbols$1;
+    }
+
+    return type !== Gradient$1 ? type
+      : isDiscretizing(scaleType) ? Discrete
+      : Gradient$1;
+  }
+
+  function scaleCount(spec) {
+    return LegendScales.reduce(function(count, type) {
+      return count + (spec[type] ? 1 : 0);
+    }, 0);
+  }
+
+  function buildLegendEncode(_, config) {
+    var encode = {enter: {}, update: {}};
+
+    addEncoders(encode, {
+      orient:       _('orient'),
+      offset:       _('offset'),
+      padding:      _('padding'),
+      titlePadding: _('titlePadding'),
+      cornerRadius: _('cornerRadius'),
+      fill:         _('fillColor'),
+      stroke:       _('strokeColor'),
+      strokeWidth:  config.strokeWidth,
+      strokeDash:   config.strokeDash,
+      x:            _('legendX'),
+      y:            _('legendY'),
+    });
+
+    return encode;
+  }
+
+  function sizeExpression(spec, scope, marks) {
+    var size = deref(getChannel('size', spec, marks)),
+        strokeWidth = deref(getChannel('strokeWidth', spec, marks)),
+        fontSize = deref(getFontSize(marks[1].encode, scope, GuideLabelStyle));
+
+    return parseExpression$1(
+      `max(ceil(sqrt(${size})+${strokeWidth}),${fontSize})`,
+      scope
+    );
+  }
+
+  function getChannel(name, spec, marks) {
+    return spec[name]
+      ? `scale("${spec[name]}",datum)`
+      : getEncoding(name, marks[0].encode);
+  }
+
+  function getFontSize(encode, scope, style) {
+    return getEncoding('fontSize', encode) || getStyle('fontSize', scope, style);
+  }
+
+  const angleExpr = `item.orient==="${Left$1}"?-90:item.orient==="${Right$1}"?90:0`,
+        baselineExpr$1 = `item.orient==="${Bottom$1}"?"${Top$1}":"${Bottom$1}"`;
+
+  function parseTitle(spec, scope) {
+    spec = isString(spec) ? {text: spec} : spec;
+
+    var config = scope.config.title,
+        encode = extend({}, spec.encode),
+        dataRef, title;
+
+    // single-element data source for group title
+    dataRef = ref(scope.add(Collect$1(null, [{}])));
+
+    // build title specification
+    encode.name = spec.name;
+    encode.interactive = spec.interactive;
+    title = buildTitle(spec, config, encode, dataRef);
+    if (spec.zindex) title.zindex = spec.zindex;
+
+    // parse title specification
+    return parseMark(title, scope);
+  }
+
+  function buildTitle(spec, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config),
+        zero = {value: 0},
+        title = spec.text,
+        encode;
+
+    encode = {
+      enter: {opacity: zero},
+      update: {opacity: {value: 1}},
+      exit: {opacity: zero}
+    };
+
+    addEncoders(encode, {
+      text:       title,
+      orient:     _('orient'),
+      anchor:     _('anchor'),
+      align:      {signal: alignExpr},
+      angle:      {signal: angleExpr},
+      baseline:   {signal: baselineExpr$1},
+      dx:         _('dx'),
+      dy:         _('dy'),
+      fill:       _('color'),
+      font:       _('font'),
+      fontSize:   _('fontSize'),
+      fontStyle:  _('fontStyle'),
+      fontWeight: _('fontWeight'),
+      frame:      _('frame'),
+      limit:      _('limit'),
+      offset:     _('offset') || 0
+    }, { // update
+      align:      _('align'),
+      angle:      _('angle'),
+      baseline:   _('baseline')
+    });
+
+    return guideMark(TextMark, TitleRole$1, spec.style || GroupTitleStyle,
+                     null, dataRef, encode, userEncode);
+  }
+
+  function parseData$1(data, scope) {
+    var transforms = [];
+
+    if (data.transform) {
+      data.transform.forEach(function(tx) {
+        transforms.push(parseTransform(tx, scope));
+      });
+    }
+
+    if (data.on) {
+      data.on.forEach(function(on) {
+        parseTrigger(on, scope, data.name);
+      });
+    }
+
+    scope.addDataPipeline(data.name, analyze(data, scope, transforms));
+  }
+
+  /**
+   * Analyze a data pipeline, add needed operators.
+   */
+  function analyze(data, scope, ops) {
+    var output = [],
+        source = null,
+        modify = false,
+        generate = false,
+        upstream, i, n, t, m;
+
+    if (data.values) {
+      // hard-wired input data set
+      if (hasSignal(data.values) || hasSignal(data.format)) {
+        // if either values or format has signal, use dynamic loader
+        output.push(load$1(scope, data));
+        output.push(source = collect());
+      } else {
+        // otherwise, ingest upon dataflow init
+        output.push(source = collect({
+          $ingest: data.values,
+          $format: data.format
+        }));
+      }
+    } else if (data.url) {
+      // load data from external source
+      if (hasSignal(data.url) || hasSignal(data.format)) {
+        // if either url or format has signal, use dynamic loader
+        output.push(load$1(scope, data));
+        output.push(source = collect());
+      } else {
+        // otherwise, request load upon dataflow init
+        output.push(source = collect({
+          $request: data.url,
+          $format: data.format
+        }));
+      }
+    } else if (data.source) {
+      // derives from one or more other data sets
+      source = upstream = array(data.source).map(function(d) {
+        return ref(scope.getData(d).output);
+      });
+      output.push(null); // populate later
+    }
+
+    // scan data transforms, add collectors as needed
+    for (i=0, n=ops.length; i<n; ++i) {
+      t = ops[i];
+      m = t.metadata;
+
+      if (!source && !m.source) {
+        output.push(source = collect());
+      }
+      output.push(t);
+
+      if (m.generates) generate = true;
+      if (m.modifies && !generate) modify = true;
+
+      if (m.source) source = t;
+      else if (m.changes) source = null;
+    }
+
+    if (upstream) {
+      n = upstream.length - 1;
+      output[0] = Relay$1({
+        derive: modify,
+        pulse: n ? upstream : upstream[0]
+      });
+      if (modify || n) {
+        // collect derived and multi-pulse tuples
+        output.splice(1, 0, collect());
+      }
+    }
+
+    if (!source) output.push(collect());
+    output.push(Sieve$1({}));
+    return output;
+  }
+
+  function collect(values) {
+    var s = Collect$1({}, values);
+    s.metadata = {source: true};
+    return s;
+  }
+
+  function load$1(scope, data) {
+    return Load$1({
+      url:    data.url ? scope.property(data.url) : undefined,
+      values: data.values ? scope.property(data.values) : undefined,
+      format: scope.objectProperty(data.format)
+    });
+  }
+
+  function axisConfig(spec, scope) {
+    var config = scope.config,
+        orient = spec.orient,
+        xy = (orient === Top$1 || orient === Bottom$1) ? config.axisX : config.axisY,
+        or = config['axis' + orient[0].toUpperCase() + orient.slice(1)],
+        band = scope.scaleType(spec.scale) === 'band' && config.axisBand;
+
+    return (xy || or || band)
+      ? extend({}, config.axis, xy, or, band)
+      : config.axis;
+  }
+
+  function axisDomain(spec, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config),
+        orient = spec.orient,
+        encode, enter, update, u, u2, v;
+
+    encode = {
+      enter: enter = {opacity: zero$2},
+      update: update = {opacity: one$2},
+      exit: {opacity: zero$2}
+    };
+
+    addEncoders(encode, {
+      stroke:           _('domainColor'),
+      strokeDash:       _('domainDash'),
+      strokeDashOffset: _('domainDashOffset'),
+      strokeWidth:      _('domainWidth'),
+      strokeOpacity:    _('domainOpacity')
+    });
+
+    if (orient === Top$1 || orient === Bottom$1) {
+      u = 'x';
+      v = 'y';
+    } else {
+      u = 'y';
+      v = 'x';
+    }
+    u2 = u + '2';
+
+    enter[v] = zero$2;
+    update[u] = enter[u] = position(spec, 0);
+    update[u2] = enter[u2] = position(spec, 1);
+
+    return guideMark(RuleMark, AxisDomainRole, null, null, dataRef, encode, userEncode);
+  }
+
+  function position(spec, pos) {
+    return {scale: spec.scale, range: pos};
+  }
+
+  function axisGrid(spec, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config),
+        orient = spec.orient,
+        vscale = spec.gridScale,
+        sign = (orient === Left$1 || orient === Top$1) ? 1 : -1,
+        offset = offsetValue(spec.offset, sign),
+        encode, enter, exit, update, tickPos, u, v, v2, s;
+
+    encode = {
+      enter: enter = {opacity: zero$2},
+      update: update = {opacity: one$2},
+      exit: exit = {opacity: zero$2}
+    };
+
+    addEncoders(encode, {
+      stroke:           _('gridColor'),
+      strokeDash:       _('gridDash'),
+      strokeDashOffset: _('gridDashOffset'),
+      strokeOpacity:    _('gridOpacity'),
+      strokeWidth:      _('gridWidth')
+    });
+
+    tickPos = {
+      scale:  spec.scale,
+      field:  Value,
+      band:   _('bandPosition'),
+      round:  _('tickRound'),
+      extra:  _('tickExtra'),
+      offset: _('tickOffset')
+    };
+
+    if (orient === Top$1 || orient === Bottom$1) {
+      u = 'x';
+      v = 'y';
+      s = 'height';
+    } else {
+      u = 'y';
+      v = 'x';
+      s = 'width';
+    }
+    v2 = v + '2';
+
+    update[u] = enter[u] = exit[u] = tickPos;
+
+    if (vscale) {
+      update[v] = enter[v] = {scale: vscale, range: 0, mult: sign, offset: offset};
+      update[v2] = enter[v2] = {scale: vscale, range: 1, mult: sign, offset: offset};
+    } else {
+      update[v] = enter[v] = {value: 0, offset: offset};
+      update[v2] = enter[v2] = {signal: s, mult: sign, offset: offset};
+    }
+
+    return guideMark(RuleMark, AxisGridRole, null, Value, dataRef, encode, userEncode);
+  }
+
+  function offsetValue(offset, sign)  {
+    if (sign === 1) ; else if (!isObject(offset)) {
+      offset = sign * (offset || 0);
+    } else {
+      var entry = offset = extend({}, offset);
+
+      while (entry.mult != null) {
+        if (!isObject(entry.mult)) {
+          entry.mult *= sign;
+          return offset;
+        } else {
+          entry = entry.mult = extend({}, entry.mult);
+        }
+      }
+
+      entry.mult = sign;
+    }
+
+    return offset;
+  }
+
+  function axisTicks(spec, config, userEncode, dataRef, size) {
+    var _ = lookup$1(spec, config),
+        orient = spec.orient,
+        sign = (orient === Left$1 || orient === Top$1) ? -1 : 1,
+        encode, enter, exit, update, tickSize, tickPos;
+
+    encode = {
+      enter: enter = {opacity: zero$2},
+      update: update = {opacity: one$2},
+      exit: exit = {opacity: zero$2}
+    };
+
+    addEncoders(encode, {
+      stroke:           _('tickColor'),
+      strokeDash:       _('tickDash'),
+      strokeDashOffset: _('tickDashOffset'),
+      strokeOpacity:    _('tickOpacity'),
+      strokeWidth:      _('tickWidth')
+    });
+
+    tickSize = encoder(size);
+    tickSize.mult = sign;
+
+    tickPos = {
+      scale:  spec.scale,
+      field:  Value,
+      band:   _('bandPosition'),
+      round:  _('tickRound'),
+      extra:  _('tickExtra'),
+      offset: _('tickOffset')
+    };
+
+    if (orient === Top$1 || orient === Bottom$1) {
+      update.y = enter.y = zero$2;
+      update.y2 = enter.y2 = tickSize;
+      update.x = enter.x = exit.x = tickPos;
+    } else {
+      update.x = enter.x = zero$2;
+      update.x2 = enter.x2 = tickSize;
+      update.y = enter.y = exit.y = tickPos;
+    }
+
+    return guideMark(RuleMark, AxisTickRole, null, Value, dataRef, encode, userEncode);
+  }
+
+  function flushExpr(scale, threshold, a, b, c) {
+    return {
+      signal: 'flush(range("' + scale + '"), '
+        + 'scale("' + scale + '", datum.value), '
+        + threshold + ',' + a + ',' + b + ',' + c + ')'
+    };
+  }
+
+  function axisLabels(spec, config, userEncode, dataRef, size) {
+    var _ = lookup$1(spec, config),
+        orient = spec.orient,
+        sign = (orient === Left$1 || orient === Top$1) ? -1 : 1,
+        isXAxis = (orient === Top$1 || orient === Bottom$1),
+        scale = spec.scale,
+        flush = deref(_('labelFlush')),
+        flushOffset = deref(_('labelFlushOffset')),
+        flushOn = flush === 0 || !!flush,
+        labelAlign = _('labelAlign'),
+        labelBaseline = _('labelBaseline'),
+        encode, enter, tickSize, tickPos, align, baseline, offset,
+        bound, overlap, separation;
+
+    tickSize = encoder(size);
+    tickSize.mult = sign;
+    tickSize.offset = encoder(_('labelPadding') || 0);
+    tickSize.offset.mult = sign;
+
+    tickPos = {
+      scale:  scale,
+      field:  Value,
+      band:   0.5,
+      offset: _('tickOffset')
+    };
+
+    if (isXAxis) {
+      align = labelAlign || (flushOn
+        ? flushExpr(scale, flush, '"left"', '"right"', '"center"')
+        : 'center');
+      baseline = labelBaseline || (orient === Top$1 ? 'bottom' : 'top');
+      offset = !labelAlign;
+    } else {
+      align = labelAlign || (orient === Right$1 ? 'left' : 'right');
+      baseline = labelBaseline || (flushOn
+        ? flushExpr(scale, flush, '"top"', '"bottom"', '"middle"')
+        : 'middle');
+      offset = !labelBaseline;
+    }
+
+    offset = offset && flushOn && flushOffset
+      ? flushExpr(scale, flush, '-' + flushOffset, flushOffset, 0)
+      : null;
+
+    encode = {
+      enter: enter = {
+        opacity: zero$2,
+        x: isXAxis ? tickPos : tickSize,
+        y: isXAxis ? tickSize : tickPos
+      },
+      update: {
+        opacity: one$2,
+        text: {field: Label},
+        x: enter.x,
+        y: enter.y
+      },
+      exit: {
+        opacity: zero$2,
+        x: enter.x,
+        y: enter.y
+      }
+    };
+
+    addEncoders(encode, {
+      [isXAxis ? 'dx' : 'dy']: offset,
+      align:       align,
+      baseline:    baseline,
+      angle:       _('labelAngle'),
+      fill:        _('labelColor'),
+      fillOpacity: _('labelOpacity'),
+      font:        _('labelFont'),
+      fontSize:    _('labelFontSize'),
+      fontWeight:  _('labelFontWeight'),
+      fontStyle:   _('labelFontStyle'),
+      limit:       _('labelLimit')
+    });
+
+    bound   = _('labelBound');
+    overlap = _('labelOverlap');
+    separation = _('labelSeparation');
+
+    spec = guideMark(TextMark, AxisLabelRole, GuideLabelStyle, Value, dataRef, encode, userEncode);
+
+    // if overlap method or bound defined, request label overlap removal
+    if (overlap || bound) {
+      spec.overlap = {
+        separation: separation,
+        method: overlap,
+        order: 'datum.index',
+        bound: bound ? {scale: scale, orient: orient, tolerance: bound} : null
+      };
+    }
+
+    return spec;
+  }
+
+  function axisTitle(spec, config, userEncode, dataRef) {
+    var _ = lookup$1(spec, config),
+        orient = spec.orient,
+        sign = (orient === Left$1 || orient === Top$1) ? -1 : 1,
+        horizontal = (orient === Top$1 || orient === Bottom$1),
+        encode, enter, update, titlePos;
+
+    encode = {
+      enter: enter = {
+        opacity: zero$2,
+        anchor: encoder(_('titleAnchor')),
+        align: {signal: alignExpr}
+      },
+      update: update = extend({}, enter, {
+        opacity: one$2,
+        text: encoder(spec.title)
+      }),
+      exit: {
+        opacity: zero$2
+      }
+    };
+
+    titlePos = {
+      signal: `lerp(range("${spec.scale}"), ${anchorExpr(0, 1, 0.5)})`
+    };
+
+    if (horizontal) {
+      update.x = titlePos;
+      enter.angle = {value: 0};
+      enter.baseline = {value: orient === Top$1 ? 'bottom' : 'top'};
+    } else {
+      update.y = titlePos;
+      enter.angle = {value: sign * 90};
+      enter.baseline = {value: 'bottom'};
+    }
+
+    addEncoders(encode, {
+      angle:       _('titleAngle'),
+      baseline:    _('titleBaseline'),
+      fill:        _('titleColor'),
+      fillOpacity: _('titleOpacity'),
+      font:        _('titleFont'),
+      fontSize:    _('titleFontSize'),
+      fontStyle:   _('titleFontStyle'),
+      fontWeight:  _('titleFontWeight'),
+      limit:       _('titleLimit')
+    }, { // require update
+      align:       _('titleAlign')
+    });
+
+    !addEncode(encode, 'x', _('titleX'), 'update')
+      && !horizontal && !has('x', userEncode)
+      && (encode.enter.auto = {value: true});
+
+    !addEncode(encode, 'y', _('titleY'), 'update')
+      && horizontal && !has('y', userEncode)
+      && (encode.enter.auto = {value: true});
+
+    return guideMark(TextMark, AxisTitleRole, GuideTitleStyle, null, dataRef, encode, userEncode);
+  }
+
+  function parseAxis(spec, scope) {
+    var config = axisConfig(spec, scope),
+        encode = spec.encode || {},
+        axisEncode = encode.axis || {},
+        name = axisEncode.name || undefined,
+        interactive = axisEncode.interactive,
+        style = axisEncode.style,
+        _ = lookup$1(spec, config),
+        datum, dataRef, ticksRef, size, group, children;
+
+    // single-element data source for axis group
+    datum = {
+      orient: spec.orient,
+      ticks:  !!_('ticks'),
+      labels: !!_('labels'),
+      grid:   !!_('grid'),
+      domain: !!_('domain'),
+      title:  spec.title != null
+    };
+    dataRef = ref(scope.add(Collect$1({}, [datum])));
+
+    // encoding properties for axis group item
+    axisEncode = extendEncode({
+      update: {
+        offset:       encoder(_('offset') || 0),
+        position:     encoder(value(spec.position, 0)),
+        titlePadding: encoder(_('titlePadding')),
+        minExtent:    encoder(_('minExtent')),
+        maxExtent:    encoder(_('maxExtent')),
+        range:        {signal: `abs(span(range("${spec.scale}")))`}
+      }
+    }, encode.axis, Skip);
+
+    // data source for axis ticks
+    ticksRef = ref(scope.add(AxisTicks({
+      scale:   scope.scaleRef(spec.scale),
+      extra:   scope.property(_('tickExtra')),
+      count:   scope.objectProperty(spec.tickCount),
+      values:  scope.objectProperty(spec.values),
+      minstep: scope.property(spec.tickMinStep),
+      formatType: scope.property(spec.formatType),
+      formatSpecifier: scope.property(spec.format)
+    })));
+
+    // generate axis marks
+    children = [];
+
+    // include axis gridlines if requested
+    if (datum.grid) {
+      children.push(axisGrid(spec, config, encode.grid, ticksRef));
+    }
+
+    // include axis ticks if requested
+    if (datum.ticks) {
+      size = _('tickSize');
+      children.push(axisTicks(spec, config, encode.ticks, ticksRef, size));
+    }
+
+    // include axis labels if requested
+    if (datum.labels) {
+      size = datum.ticks ? size : 0;
+      children.push(axisLabels(spec, config, encode.labels, ticksRef, size));
+    }
+
+    // include axis domain path if requested
+    if (datum.domain) {
+      children.push(axisDomain(spec, config, encode.domain, dataRef));
+    }
+
+    // include axis title if defined
+    if (datum.title) {
+      children.push(axisTitle(spec, config, encode.title, dataRef));
+    }
+
+    // build axis specification
+    group = guideGroup(AxisRole$1, style, name, dataRef, interactive, axisEncode, children);
+    if (spec.zindex) group.zindex = spec.zindex;
+
+    // parse axis specification
+    return parseMark(group, scope);
+  }
+
+  function parseSpec(spec, scope, preprocessed) {
+    var signals = array(spec.signals),
+        scales = array(spec.scales);
+
+    if (!preprocessed) signals.forEach(function(_) {
+      parseSignal(_, scope);
+    });
+
+    array(spec.projections).forEach(function(_) {
+      parseProjection(_, scope);
+    });
+
+    scales.forEach(function(_) {
+      initScale(_, scope);
+    });
+
+    array(spec.data).forEach(function(_) {
+      parseData$1(_, scope);
+    });
+
+    scales.forEach(function(_) {
+      parseScale(_, scope);
+    });
+
+    signals.forEach(function(_) {
+      parseSignalUpdates(_, scope);
+    });
+
+    array(spec.axes).forEach(function(_) {
+      parseAxis(_, scope);
+    });
+
+    array(spec.marks).forEach(function(_) {
+      parseMark(_, scope);
+    });
+
+    array(spec.legends).forEach(function(_) {
+      parseLegend(_, scope);
+    });
+
+    if (spec.title) {
+      parseTitle(spec.title, scope);
+    }
+
+    scope.parseLambdas();
+    return scope;
+  }
+
+  var defined = toSet(['width', 'height', 'padding', 'autosize']);
+
+  function parseView(spec, scope) {
+    var config = scope.config,
+        op, input, encode, parent, root;
+
+    scope.background = spec.background || config.background;
+    scope.eventConfig = config.events;
+    root = ref(scope.root = scope.add(operator()));
+    scope.addSignal('width', spec.width || 0);
+    scope.addSignal('height', spec.height || 0);
+    scope.addSignal('padding', parsePadding(spec.padding, config));
+    scope.addSignal('autosize', parseAutosize(spec.autosize, config));
+    scope.legends = scope.objectProperty(config.legend && config.legend.layout);
+
+    array(spec.signals).forEach(function(_) {
+      if (!defined[_.name]) parseSignal(_, scope);
+    });
+
+    // Store root group item
+    input = scope.add(Collect$1());
+
+    // Encode root group item
+    encode = extendEncode({
+      enter: { x: {value: 0}, y: {value: 0} },
+      update: { width: {signal: 'width'}, height: {signal: 'height'} }
+    }, spec.encode);
+
+    encode = scope.add(Encode(
+      encoders(encode, GroupMark, FrameRole$1, spec.style, scope, {pulse: ref(input)}))
+    );
+
+    // Perform view layout
+    parent = scope.add(ViewLayout({
+      layout:       scope.objectProperty(spec.layout),
+      legends:      scope.legends,
+      autosize:     scope.signalRef('autosize'),
+      mark:         root,
+      pulse:        ref(encode)
+    }));
+    scope.operators.pop();
+
+    // Parse remainder of specification
+    scope.pushState(ref(encode), ref(parent), null);
+    parseSpec(spec, scope, true);
+    scope.operators.push(parent);
+
+    // Bound / render / sieve root item
+    op = scope.add(Bound({mark: root, pulse: ref(parent)}));
+    op = scope.add(Render({pulse: ref(op)}));
+    op = scope.add(Sieve$1({pulse: ref(op)}));
+
+    // Track metadata for root item
+    scope.addData('root', new DataScope(scope, input, input, op));
+
+    return scope;
+  }
+
+  function Scope$1(config) {
+    this.config = config;
+
+    this.bindings = [];
+    this.field = {};
+    this.signals = {};
+    this.lambdas = {};
+    this.scales = {};
+    this.events = {};
+    this.data = {};
+
+    this.streams = [];
+    this.updates = [];
+    this.operators = [];
+    this.background = null;
+    this.eventConfig = null;
+
+    this._id = 0;
+    this._subid = 0;
+    this._nextsub = [0];
+
+    this._parent = [];
+    this._encode = [];
+    this._lookup = [];
+    this._markpath = [];
+  }
+
+  function Subscope(scope) {
+    this.config = scope.config;
+    this.legends = scope.legends;
+
+    this.field = Object.create(scope.field);
+    this.signals = Object.create(scope.signals);
+    this.lambdas = Object.create(scope.lambdas);
+    this.scales = Object.create(scope.scales);
+    this.events = Object.create(scope.events);
+    this.data = Object.create(scope.data);
+
+    this.streams = [];
+    this.updates = [];
+    this.operators = [];
+
+    this._id = 0;
+    this._subid = ++scope._nextsub[0];
+    this._nextsub = scope._nextsub;
+
+    this._parent = scope._parent.slice();
+    this._encode = scope._encode.slice();
+    this._lookup = scope._lookup.slice();
+    this._markpath = scope._markpath;
+  }
+
+  var prototype$M = Scope$1.prototype = Subscope.prototype;
+
+  // ----
+
+  prototype$M.fork = function() {
+    return new Subscope(this);
+  };
+
+  prototype$M.isSubscope = function() {
+    return this._subid > 0;
+  };
+
+  prototype$M.toRuntime = function() {
+    this.finish();
+    return {
+      background:  this.background,
+      operators:   this.operators,
+      streams:     this.streams,
+      updates:     this.updates,
+      bindings:    this.bindings,
+      eventConfig: this.eventConfig
+    };
+  };
+
+  prototype$M.id = function() {
+    return (this._subid ? this._subid + ':' : 0) + this._id++;
+  };
+
+  prototype$M.add = function(op) {
+    this.operators.push(op);
+    op.id = this.id();
+    // if pre-registration references exist, resolve them now
+    if (op.refs) {
+      op.refs.forEach(function(ref) { ref.$ref = op.id; });
+      op.refs = null;
+    }
+    return op;
+  };
+
+  prototype$M.proxy = function(op) {
+    var vref = op instanceof Entry ? ref(op) : op;
+    return this.add(Proxy$1({value: vref}));
+  };
+
+  prototype$M.addStream = function(stream) {
+    this.streams.push(stream);
+    stream.id = this.id();
+    return stream;
+  };
+
+  prototype$M.addUpdate = function(update) {
+    this.updates.push(update);
+    return update;
+  };
+
+  // Apply metadata
+  prototype$M.finish = function() {
+    var name, ds;
+
+    // annotate root
+    if (this.root) this.root.root = true;
+
+    // annotate signals
+    for (name in this.signals) {
+      this.signals[name].signal = name;
+    }
+
+    // annotate scales
+    for (name in this.scales) {
+      this.scales[name].scale = name;
+    }
+
+    // annotate data sets
+    function annotate(op, name, type) {
+      var data, list;
+      if (op) {
+        data = op.data || (op.data = {});
+        list = data[name] || (data[name] = []);
+        list.push(type);
+      }
+    }
+    for (name in this.data) {
+      ds = this.data[name];
+      annotate(ds.input,  name, 'input');
+      annotate(ds.output, name, 'output');
+      annotate(ds.values, name, 'values');
+      for (var field in ds.index) {
+        annotate(ds.index[field], name, 'index:' + field);
+      }
+    }
+
+    return this;
+  };
+
+  // ----
+
+  prototype$M.pushState = function(encode, parent, lookup) {
+    this._encode.push(ref(this.add(Sieve$1({pulse: encode}))));
+    this._parent.push(parent);
+    this._lookup.push(lookup ? ref(this.proxy(lookup)) : null);
+    this._markpath.push(-1);
+  };
+
+  prototype$M.popState = function() {
+    this._encode.pop();
+    this._parent.pop();
+    this._lookup.pop();
+    this._markpath.pop();
+  };
+
+  prototype$M.parent = function() {
+    return peek(this._parent);
+  };
+
+  prototype$M.encode = function() {
+    return peek(this._encode);
+  };
+
+  prototype$M.lookup = function() {
+    return peek(this._lookup);
+  };
+
+  prototype$M.markpath = function() {
+    var p = this._markpath;
+    return ++p[p.length-1];
+  };
+
+  // ----
+
+  prototype$M.fieldRef = function(field, name) {
+    if (isString(field)) return fieldRef(field, name);
+    if (!field.signal) {
+      error('Unsupported field reference: ' + $(field));
+    }
+
+    var s = field.signal,
+        f = this.field[s],
+        params;
+
+    if (!f) {
+      params = {name: this.signalRef(s)};
+      if (name) params.as = name;
+      this.field[s] = f = ref(this.add(Field$1(params)));
+    }
+    return f;
+  };
+
+  prototype$M.compareRef = function(cmp, stable) {
+    function check(_) {
+      if (isSignal(_)) {
+        signal = true;
+        return scope.signalRef(_.signal);
+      } else if (isExpr(_)) {
+        signal = true;
+        return scope.exprRef(_.expr);
+      } else {
+        return _;
+      }
+    }
+
+    var scope = this,
+        signal = false,
+        fields = array(cmp.field).map(check),
+        orders = array(cmp.order).map(check);
+
+    if (stable) {
+      fields.push(tupleidRef);
+    }
+
+    return signal
+      ? ref(this.add(Compare$1({fields: fields, orders: orders})))
+      : compareRef(fields, orders);
+  };
+
+  prototype$M.keyRef = function(fields, flat) {
+    function check(_) {
+      if (isSignal(_)) {
+        signal = true;
+        return ref(sig[_.signal]);
+      } else {
+        return _;
+      }
+    }
+
+    var sig = this.signals,
+        signal = false;
+    fields = array(fields).map(check);
+
+    return signal
+      ? ref(this.add(Key$1({fields: fields, flat: flat})))
+      : keyRef(fields, flat);
+  };
+
+  prototype$M.sortRef = function(sort) {
+    if (!sort) return sort;
+
+    // including id ensures stable sorting
+    var a = [aggrField(sort.op, sort.field), tupleidRef],
+        o = sort.order || Ascending;
+
+    return o.signal
+      ? ref(this.add(Compare$1({
+          fields: a,
+          orders: [o = this.signalRef(o.signal), o]
+        })))
+      : compareRef(a, [o, o]);
+  };
+
+  // ----
+
+  prototype$M.event = function(source, type) {
+    var key = source + ':' + type;
+    if (!this.events[key]) {
+      var id = this.id();
+      this.streams.push({
+        id: id,
+        source: source,
+        type: type
+      });
+      this.events[key] = id;
+    }
+    return this.events[key];
+  };
+
+  // ----
+
+  prototype$M.addSignal = function(name, value) {
+    if (this.signals.hasOwnProperty(name)) {
+      error('Duplicate signal name: ' + $(name));
+    }
+    var op = value instanceof Entry ? value : this.add(operator(value));
+    return this.signals[name] = op;
+  };
+
+  prototype$M.getSignal = function(name) {
+    if (!this.signals[name]) {
+      error('Unrecognized signal name: ' + $(name));
+    }
+    return this.signals[name];
+  };
+
+  prototype$M.signalRef = function(s) {
+    if (this.signals[s]) {
+      return ref(this.signals[s]);
+    } else if (!this.lambdas.hasOwnProperty(s)) {
+      this.lambdas[s] = this.add(operator(null));
+    }
+    return ref(this.lambdas[s]);
+  };
+
+  prototype$M.parseLambdas = function() {
+    var code = Object.keys(this.lambdas);
+    for (var i=0, n=code.length; i<n; ++i) {
+      var s = code[i],
+          e = parseExpression$1(s, this),
+          op = this.lambdas[s];
+      op.params = e.$params;
+      op.update = e.$expr;
+    }
+  };
+
+  prototype$M.property = function(spec) {
+    return spec && spec.signal ? this.signalRef(spec.signal) : spec;
+  };
+
+  prototype$M.objectProperty = function(spec) {
+    return (!spec || !isObject(spec)) ? spec
+      : this.signalRef(spec.signal || propertyLambda(spec));
+  };
+
+  function propertyLambda(spec) {
+    return (isArray(spec) ? arrayLambda : objectLambda)(spec);
+  }
+
+  function arrayLambda(array) {
+    var code = '[',
+        i = 0,
+        n = array.length,
+        value;
+
+    for (; i<n; ++i) {
+      value = array[i];
+      code += (i > 0 ? ',' : '')
+        + (isObject(value)
+          ? (value.signal || propertyLambda(value))
+          : $(value));
+    }
+    return code + ']';
+  }
+
+  function objectLambda(obj) {
+    var code = '{',
+        i = 0,
+        key, value;
+
+    for (key in obj) {
+      value = obj[key];
+      code += (++i > 1 ? ',' : '')
+        + $(key) + ':'
+        + (isObject(value)
+          ? (value.signal || propertyLambda(value))
+          : $(value));
+    }
+    return code + '}';
+  }
+
+  prototype$M.exprRef = function(code, name) {
+    var params = {expr: parseExpression$1(code, this)};
+    if (name) params.expr.$name = name;
+    return ref(this.add(Expression$1(params)));
+  };
+
+  prototype$M.addBinding = function(name, bind) {
+    if (!this.bindings) {
+      error('Nested signals do not support binding: ' + $(name));
+    }
+    this.bindings.push(extend({signal: name}, bind));
+  };
+
+  // ----
+
+  prototype$M.addScaleProj = function(name, transform) {
+    if (this.scales.hasOwnProperty(name)) {
+      error('Duplicate scale or projection name: ' + $(name));
+    }
+    this.scales[name] = this.add(transform);
+  };
+
+  prototype$M.addScale = function(name, params) {
+    this.addScaleProj(name, Scale(params));
+  };
+
+  prototype$M.addProjection = function(name, params) {
+    this.addScaleProj(name, Projection(params));
+  };
+
+  prototype$M.getScale = function(name) {
+    if (!this.scales[name]) {
+      error('Unrecognized scale name: ' + $(name));
+    }
+    return this.scales[name];
+  };
+
+  prototype$M.projectionRef =
+  prototype$M.scaleRef = function(name) {
+    return ref(this.getScale(name));
+  };
+
+  prototype$M.projectionType =
+  prototype$M.scaleType = function(name) {
+    return this.getScale(name).params.type;
+  };
+
+  // ----
+
+  prototype$M.addData = function(name, dataScope) {
+    if (this.data.hasOwnProperty(name)) {
+      error('Duplicate data set name: ' + $(name));
+    }
+    return (this.data[name] = dataScope);
+  };
+
+  prototype$M.getData = function(name) {
+    if (!this.data[name]) {
+      error('Undefined data set name: ' + $(name));
+    }
+    return this.data[name];
+  };
+
+  prototype$M.addDataPipeline = function(name, entries) {
+    if (this.data.hasOwnProperty(name)) {
+      error('Duplicate data set name: ' + $(name));
+    }
+    return this.addData(name, DataScope.fromEntries(this, entries));
+  };
+
+  function defaults(configs) {
+    return (configs || []).reduce((out, config) => {
+      for (var key in config) {
+        var r = key === 'legend' ? {'layout': 1}
+          : key === 'style' ? true : null;
+        copy$3(out, key, config[key], r);
+      }
+      return out;
+    }, defaults$1());
+  }
+
+  function copy$3(output, key, value, recurse) {
+    var k, o;
+    if (isObject(value) && !isArray(value)) {
+      o = isObject(output[key]) ? output[key] : (output[key] = {});
+      for (k in value) {
+        if (recurse && (recurse === true || recurse[k])) {
+          copy$3(o, k, value[k]);
+        } else {
+          o[k] = value[k];
+        }
+      }
+    } else {
+      output[key] = value;
+    }
+  }
+
+  var defaultFont = 'sans-serif',
+      defaultSymbolSize = 30,
+      defaultStrokeWidth = 2,
+      defaultColor = '#4c78a8',
+      black = '#000',
+      gray = '#888',
+      lightGray = '#ddd';
+
+  /**
+   * Standard configuration defaults for Vega specification parsing.
+   * Users can provide their own (sub-)set of these default values
+   * by passing in a config object to the top-level parse method.
+   */
+  function defaults$1() {
+    return {
+      // default padding around visualization
+      padding: 0,
+
+      // default for automatic sizing; options: 'none', 'pad', 'fit'
+      // or provide an object (e.g., {'type': 'pad', 'resize': true})
+      autosize: 'pad',
+
+      // default view background color
+      // covers the entire view component
+      background: null,
+
+      // default event handling configuration
+      // preventDefault for view-sourced event types except 'wheel'
+      events: {
+        defaults: {allow: ['wheel']}
+      },
+
+      // defaults for top-level group marks
+      // accepts mark properties (fill, stroke, etc)
+      // covers the data rectangle within group width/height
+      group: null,
+
+      // defaults for basic mark types
+      // each subset accepts mark properties (fill, stroke, etc)
+      mark: null,
+      arc: { fill: defaultColor },
+      area: { fill: defaultColor },
+      image: null,
+      line: {
+        stroke: defaultColor,
+        strokeWidth: defaultStrokeWidth
+      },
+      path: { stroke: defaultColor },
+      rect: { fill: defaultColor },
+      rule: { stroke: black },
+      shape: { stroke: defaultColor },
+      symbol: {
+        fill: defaultColor,
+        size: 64
+      },
+      text: {
+        fill: black,
+        font: defaultFont,
+        fontSize: 11
+      },
+
+      // style definitions
+      style: {
+        // axis & legend labels
+        'guide-label': {
+          fill: black,
+          font: defaultFont,
+          fontSize: 10
+        },
+        // axis & legend titles
+        'guide-title': {
+          fill: black,
+          font: defaultFont,
+          fontSize: 11,
+          fontWeight: 'bold'
+        },
+        // headers, including chart title
+        'group-title': {
+          fill: black,
+          font: defaultFont,
+          fontSize: 13,
+          fontWeight: 'bold'
+        },
+        // defaults for styled point marks in Vega-Lite
+        point: {
+          size: defaultSymbolSize,
+          strokeWidth: defaultStrokeWidth,
+          shape: 'circle'
+        },
+        circle: {
+          size: defaultSymbolSize,
+          strokeWidth: defaultStrokeWidth
+        },
+        square: {
+          size: defaultSymbolSize,
+          strokeWidth: defaultStrokeWidth,
+          shape: 'square'
+        },
+        // defaults for styled group marks in Vega-Lite
+        cell: {
+          fill: 'transparent',
+          stroke: lightGray
+        }
+      },
+
+      // defaults for title
+      title: {
+        orient: 'top',
+        anchor: 'middle',
+        offset: 4
+      },
+
+      // defaults for axes
+      axis: {
+        minExtent: 0,
+        maxExtent: 200,
+        bandPosition: 0.5,
+        domain: true,
+        domainWidth: 1,
+        domainColor: gray,
+        grid: false,
+        gridWidth: 1,
+        gridColor: lightGray,
+        labels: true,
+        labelAngle: 0,
+        labelLimit: 180,
+        labelPadding: 2,
+        ticks: true,
+        tickColor: gray,
+        tickOffset: 0,
+        tickRound: true,
+        tickSize: 5,
+        tickWidth: 1,
+        titlePadding: 4
+      },
+
+      // correction for centering bias
+      axisBand: {
+        tickOffset: -1
+      },
+
+      // defaults for legends
+      legend: {
+        orient: 'right',
+        padding: 0,
+        gridAlign: 'each',
+        columnPadding: 10,
+        rowPadding: 2,
+        symbolDirection: 'vertical',
+        gradientDirection: 'vertical',
+        gradientLength: 200,
+        gradientThickness: 16,
+        gradientStrokeColor: lightGray,
+        gradientStrokeWidth: 0,
+        gradientLabelOffset: 2,
+        labelAlign: 'left',
+        labelBaseline: 'middle',
+        labelLimit: 160,
+        labelOffset: 4,
+        labelOverlap: true,
+        symbolType: 'circle',
+        symbolSize: 100,
+        symbolOffset: 0,
+        symbolStrokeWidth: 1.5,
+        symbolBaseFillColor: 'transparent',
+        symbolBaseStrokeColor: gray,
+        titleLimit: 180,
+        titleOrient: 'top',
+        titlePadding: 5,
+        layout: {
+          offset: 18,
+          direction: 'horizontal',
+          left:   { direction: 'vertical' },
+          right:  { direction: 'vertical' }
+        }
+      },
+
+      // defaults for scale ranges
+      range: {
+        category: {
+          scheme: 'tableau10'
+        },
+        ordinal: {
+          scheme: 'blues'
+        },
+        heatmap: {
+          scheme: 'yellowgreenblue'
+        },
+        ramp: {
+          scheme: 'blues'
+        },
+        diverging: {
+          scheme: 'blueorange',
+          extent: [1, 0]
+        },
+        symbol: [
+          'circle',
+          'square',
+          'triangle-up',
+          'cross',
+          'diamond',
+          'triangle-right',
+          'triangle-down',
+          'triangle-left'
+        ]
+      }
+    };
+  }
+
+  function parse$4(spec, config) {
+    if (!isObject(spec)) error('Input Vega specification must be an object.');
+    return parseView(spec, new Scope$1(defaults([config, spec.config])))
+      .toRuntime();
+  }
+
+  var ns = metadata.xmlns;
+
+  function SVGRenderer(loader) {
+    Renderer.call(this, loader);
+    this._dirtyID = 1;
+    this._dirty = [];
+    this._svg = null;
+    this._root = null;
+    this._defs = null;
+  }
+
+  var prototype$N = inherits(SVGRenderer, Renderer);
+  var base$1 = Renderer.prototype;
+
+  prototype$N.initialize = function (el, width, height, padding) {
+    if (el) {
+      this._svg = domChild(el, 0, 'svg', ns);
+      this._svg.setAttribute('class', 'marks');
+      this._svg.setAttribute('id', 'visChart');
+      domClear(el, 1);
+      // set the svg root group
+      this._root = domChild(this._svg, 0, 'g', ns);
+      this._root.setAttribute('id', 'chartContent');
+      domClear(this._svg, 1);
+    }
+
+    // create the svg definitions cache
+    this._defs = {
+      gradient: {},
+      clipping: {}
+    };
+
+    // set background color if defined
+    this.background(this._bgcolor);
+
+    return base$1.initialize.call(this, el, width, height, padding);
+  };
+
+  prototype$N.background = function (bgcolor) {
+    if (arguments.length && this._svg) {
+      this._svg.style.setProperty('background-color', bgcolor);
+    }
+    return base$1.background.apply(this, arguments);
+  };
+
+  prototype$N.resize = function (width, height, origin, scaleFactor) {
+    base$1.resize.call(this, width, height, origin, scaleFactor);
+
+    if (this._svg) {
+      this._svg.setAttribute('width', this._width * this._scale);
+      this._svg.setAttribute('height', this._height * this._scale);
+      this._svg.setAttribute('viewBox', '0 0 ' + this._width + ' ' + this._height);
+      this._root.setAttribute('transform', 'translate(' + this._origin + ')');
+    }
+
+    this._dirty = [];
+
+    return this;
+  };
+
+  prototype$N.canvas = function () {
+    return this._svg;
+  };
+
+  prototype$N.svg = function () {
+    if (!this._svg) return null;
+
+    var attr = {
+      id: 'visChart',
+      class: 'marks',
+      width: this._width * this._scale,
+      height: this._height * this._scale,
+      viewBox: '0 0 ' + this._width + ' ' + this._height
+    };
+    for (var key in metadata) {
+      attr[key] = metadata[key];
+    }
+
+    var bg = !this._bgcolor ? ''
+      : (openTag('rect', {
+        width: this._width,
+        height: this._height,
+        style: 'fill: ' + this._bgcolor + ';'
+      }) + closeTag('rect'));
+
+    return openTag('svg', attr) + bg + this._svg.innerHTML + closeTag('svg');
+  };
+
+
+  // -- Render entry point --
+
+  prototype$N._render = function (scene) {
+    // perform spot updates and re-render markup
+    id$1.reset();
+    if (this._dirtyCheck()) {
+      if (this._dirtyAll) this._resetDefs();
+      this.draw(this._root, scene);
+      domClear(this._root, 1);
+    }
+
+    this.updateDefs();
+
+    this._dirty = [];
+    ++this._dirtyID;
+
+    return this;
+  };
+
+  // -- Manage SVG definitions ('defs') block --
+
+  prototype$N.updateDefs = function () {
+    var svg = this._svg,
+      defs = this._defs,
+      el = defs.el,
+      index = 0, id;
+
+    for (id in defs.gradient) {
+      if (!el) defs.el = (el = domChild(svg, 0, 'defs', ns));
+      index = updateGradient(el, defs.gradient[id], index);
+    }
+
+    for (id in defs.clipping) {
+      if (!el) defs.el = (el = domChild(svg, 0, 'defs', ns));
+      index = updateClipping(el, defs.clipping[id], index);
+    }
+
+    // clean-up
+    if (el) {
+      if (index === 0) {
+        svg.removeChild(el);
+        defs.el = null;
+      } else {
+        domClear(el, index);
+      }
+    }
+  };
+
+  function updateGradient(el, grad, index) {
+    var i, n, stop;
+
+    if (grad.gradient === 'radial') {
+      // SVG radial gradients automatically transform to normalized bbox
+      // coordinates, in a way that is cumbersome to replicate in canvas.
+      // So we wrap the radial gradient in a pattern element, allowing us
+      // to mantain a circular gradient that matches what canvas provides.
+      var pt = domChild(el, index++, 'pattern', ns);
+      pt.setAttribute('id', patternPrefix + grad.id);
+      pt.setAttribute('viewBox', '0,0,1,1');
+      pt.setAttribute('width', '100%');
+      pt.setAttribute('height', '100%');
+      pt.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+
+      pt = domChild(pt, 0, 'rect', ns);
+      pt.setAttribute('width', '1');
+      pt.setAttribute('height', '1');
+      pt.setAttribute('fill', 'url(' + href() + '#' + grad.id + ')');
+
+      el = domChild(el, index++, 'radialGradient', ns);
+      el.setAttribute('id', grad.id);
+      el.setAttribute('fx', grad.x1);
+      el.setAttribute('fy', grad.y1);
+      el.setAttribute('fr', grad.r1);
+      el.setAttribute('cx', grad.x2);
+      el.setAttribute('cy', grad.y2);
+      el.setAttribute('r', grad.r2);
+    } else {
+      el = domChild(el, index++, 'linearGradient', ns);
+      el.setAttribute('id', grad.id);
+      el.setAttribute('x1', grad.x1);
+      el.setAttribute('x2', grad.x2);
+      el.setAttribute('y1', grad.y1);
+      el.setAttribute('y2', grad.y2);
+    }
+
+    for (i = 0, n = grad.stops.length; i < n; ++i) {
+      stop = domChild(el, i, 'stop', ns);
+      stop.setAttribute('offset', grad.stops[i].offset);
+      stop.setAttribute('stop-color', grad.stops[i].color);
+    }
+    domClear(el, i);
+
+    return index;
+  }
+
+  function updateClipping(el, clip, index) {
+    var mask;
+
+    el = domChild(el, index, 'clipPath', ns);
+    el.setAttribute('id', clip.id);
+
+    if (clip.path) {
+      mask = domChild(el, 0, 'path', ns);
+      mask.setAttribute('d', clip.path);
+    } else {
+      mask = domChild(el, 0, 'rect', ns);
+      mask.setAttribute('x', 0);
+      mask.setAttribute('y', 0);
+      mask.setAttribute('width', clip.width);
+      mask.setAttribute('height', clip.height);
+    }
+
+    return index + 1;
+  }
+
+  prototype$N._resetDefs = function () {
+    var def = this._defs;
+    def.gradient = {};
+    def.clipping = {};
+  };
+
+
+  // -- Manage rendering of items marked as dirty --
+
+  prototype$N.dirty = function (item) {
+    if (item.dirty !== this._dirtyID) {
+      item.dirty = this._dirtyID;
+      this._dirty.push(item);
+    }
+  };
+
+  prototype$N.isDirty = function (item) {
+    return this._dirtyAll
+      || !item._svg
+      || item.dirty === this._dirtyID;
+  };
+
+  prototype$N._dirtyCheck = function () {
+    this._dirtyAll = true;
+    var items = this._dirty;
+    if (!items.length) return true;
+
+    var id = ++this._dirtyID,
+      item, mark, type, mdef, i, n, o;
+
+    for (i = 0, n = items.length; i < n; ++i) {
+      item = items[i];
+      mark = item.mark;
+
+      if (mark.marktype !== type) {
+        // memoize mark instance lookup
+        type = mark.marktype;
+        mdef = Marks[type];
+      }
+
+      if (mark.zdirty && mark.dirty !== id) {
+        this._dirtyAll = false;
+        dirtyParents(item, id);
+        mark.items.forEach(function (i) { i.dirty = id; });
+      }
+      if (mark.zdirty) continue; // handle in standard drawing pass
+
+      if (item.exit) { // EXIT
+        if (mdef.nested && mark.items.length) {
+          // if nested mark with remaining points, update instead
+          o = mark.items[0];
+          if (o._svg) this._update(mdef, o._svg, o);
+        } else if (item._svg) {
+          // otherwise remove from DOM
+          o = item._svg.parentNode;
+          if (o) o.removeChild(item._svg);
+        }
+        item._svg = null;
+        continue;
+      }
+
+      item = (mdef.nested ? mark.items[0] : item);
+      if (item._update === id) continue; // already visited
+
+      if (!item._svg || !item._svg.ownerSVGElement) {
+        // ENTER
+        this._dirtyAll = false;
+        dirtyParents(item, id);
+      } else {
+        // IN-PLACE UPDATE
+        this._update(mdef, item._svg, item);
+      }
+      item._update = id;
+    }
+    return !this._dirtyAll;
+  };
+
+  function dirtyParents(item, id) {
+    for (; item && item.dirty !== id; item = item.mark.group) {
+      item.dirty = id;
+      if (item.mark && item.mark.dirty !== id) {
+        item.mark.dirty = id;
+      } else return;
+    }
+  }
+
+
+  // -- Construct & maintain scenegraph to SVG mapping ---
+
+  // Draw a mark container.
+  prototype$N.draw = function (el, scene, prev) {
+    if (!this.isDirty(scene)) return scene._svg;
+
+    var renderer = this,
+      svg = this._svg,
+      mdef = Marks[scene.marktype],
+      events = scene.interactive === false ? 'none' : null,
+      isGroup = mdef.tag === 'g',
+      sibling = null,
+      i = 0,
+      parent;
+
+    parent = bind(scene, el, prev, 'g', svg);
+    if (scene.role == 'axis') {
+      parent.setAttribute('data-datum', JSON.stringify({
+        _TYPE: 'axis',
+        type: scene.items[0].datum.orient,
+        position: ''
+      }));
+      console.log(scene.source);
+    }
+    if (scene.role == 'legend') {
+      parent.setAttribute('data-datum', JSON.stringify({
+        _TYPE: 'legend',
+        color: ''
+      }));
+      console.log(scene.source);
+    }
+    parent.setAttribute('class', cssClass(scene));
+    if (!isGroup) {
+      parent.style.setProperty('pointer-events', events);
+    }
+    if (scene.clip) {
+      parent.setAttribute('clip-path', clip(renderer, scene, scene.group));
+    } else {
+      parent.removeAttribute('clip-path');
+    }
+
+    function process(item) {
+      var dirty = renderer.isDirty(item),
+        node = bind(item, parent, sibling, mdef.tag, svg);
+
+      if (dirty) {
+        renderer._update(mdef, node, item);
+        if (isGroup) recurse(renderer, node, item);
+      }
+
+      sibling = node;
+      ++i;
+    }
+
+    if (mdef.nested) {
+      if (scene.items.length) process(scene.items[0]);
+    } else {
+      visit(scene, process);
+    }
+
+    domClear(parent, i);
+    return parent;
+  };
+
+  // Recursively process group contents.
+  function recurse(renderer, el, group) {
+    el = el.lastChild;
+    var prev, idx = 0;
+
+    visit(group, function (item) {
+      prev = renderer.draw(el, item, prev);
+      ++idx;
+    });
+
+    // remove any extraneous DOM elements
+    domClear(el, 1 + idx);
+  }
+
+  // Bind a scenegraph item to an SVG DOM element.
+  // Create new SVG elements as needed.
+  function bind(item, el, sibling, tag, svg) {
+    var node = item._svg, doc;
+
+    // create a new dom node if needed
+    if (!node) {
+      doc = el.ownerDocument;
+      node = domCreate(doc, tag, ns);
+      item._svg = node;
+
+      if (item.mark) {
+        node.__data__ = item;
+        node.__values__ = { fill: 'default' };
+
+        // if group, create background and foreground elements
+        if (tag === 'g') {
+          var bg = domCreate(doc, 'path', ns);
+          bg.setAttribute('class', 'background');
+          node.appendChild(bg);
+          bg.__data__ = item;
+
+          var fg = domCreate(doc, 'g', ns);
+          node.appendChild(fg);
+          fg.__data__ = item;
+        }
+      }
+    }
+
+    // (re-)insert if (a) not contained in SVG or (b) sibling order has changed
+    if (node.ownerSVGElement !== svg || hasSiblings(item) && node.previousSibling !== sibling) {
+      el.insertBefore(node, sibling ? sibling.nextSibling : el.firstChild);
+    }
+
+    return node;
+  }
+
+  function hasSiblings(item) {
+    var parent = item.mark || item.group;
+    return parent && parent.items.length > 1;
+  }
+
+
+  // -- Set attributes & styles on SVG elements ---
+
+  var element = null, // temp var for current SVG element
+    values = null;  // temp var for current values hash
+
+  // Extra configuration for certain mark types
+  var mark_extras = {
+    group: function (mdef, el, item) {
+      values = el.__values__; // use parent's values hash
+
+      element = el.childNodes[1];
+      mdef.foreground(emit, item, this);
+
+      element = el.childNodes[0];
+      mdef.background(emit, item, this);
+
+      var value = item.mark.interactive === false ? 'none' : null;
+      if (value !== values.events) {
+        element.style.setProperty('pointer-events', value);
+        values.events = value;
+      }
+    },
+    text: function (mdef, el, item) {
+      var value;
+
+      value = textValue(item);
+      if (value !== values.text) {
+        el.textContent = value;
+        values.text = value;
+      }
+
+      setStyle(el, 'font-family', fontFamily(item));
+      setStyle(el, 'font-size', fontSize(item) + 'px');
+      setStyle(el, 'font-style', item.fontStyle);
+      setStyle(el, 'font-variant', item.fontVariant);
+      setStyle(el, 'font-weight', item.fontWeight);
+    }
+  };
+
+  function setStyle(el, name, value) {
+    if (value !== values[name]) {
+      if (value == null) {
+        el.style.removeProperty(name);
+      } else {
+        el.style.setProperty(name, value + '');
+      }
+      values[name] = value;
+    }
+  }
+
+  prototype$N._update = function (mdef, el, item) {
+    // set dom element and values cache
+    // provides access to emit method
+    element = el;
+    values = el.__values__;
+
+    // apply svg attributes
+    mdef.attr(emit, item, this);
+
+    // some marks need special treatment
+    var extra = mark_extras[mdef.type];
+    if (extra) extra.call(this, mdef, el, item);
+
+    // apply svg css styles
+    // note: element may be modified by 'extra' method
+    this.style(element, item);
+  };
+
+  function emit(name, value, ns) {
+    // early exit if value is unchanged
+    if (value === values[name]) return;
+
+    if (value != null) {
+      // if value is provided, update DOM attribute
+      if (ns) {
+        element.setAttributeNS(ns, name, value);
+      } else {
+        element.setAttribute(name, value);
+      }
+    } else {
+      // else remove DOM attribute
+      if (ns) {
+        element.removeAttributeNS(ns, name);
+      } else {
+        element.removeAttribute(name);
+      }
+    }
+
+    // note current value for future comparison
+    values[name] = value;
+  }
+
+  prototype$N.style = function (el, o) {
+    if (o == null) return;
+    var i, n, prop, name, value;
+
+    for (i = 0, n = styleProperties.length; i < n; ++i) {
+      prop = styleProperties[i];
+      value = o[prop];
+
+      if (prop === 'font') {
+        value = fontFamily(o);
+      }
+
+      if (value === values[prop]) continue;
+
+      name = styles[prop];
+      if (value == null) {
+        if (name === 'fill') {
+          el.style.setProperty(name, 'none');
+        } else {
+          el.style.removeProperty(name);
+        }
+      } else {
+        if (isGradient(value)) {
+          value = gradientRef(value, this._defs.gradient, href());
+        }
+        el.style.setProperty(name, value + '');
+      }
+
+      values[prop] = value;
+    }
+  };
+
+  function href() {
+    var loc;
+    return typeof window === 'undefined' ? ''
+      : (loc = window.location).hash ? loc.href.slice(0, -loc.hash.length)
+        : loc.href;
+  }
+
+  function SVGStringRenderer(loader) {
+    Renderer.call(this, loader);
+
+    this._text = {
+      head: '',
+      bg: '',
+      root: '',
+      foot: '',
+      defs: '',
+      body: ''
+    };
+
+    this._defs = {
+      gradient: {},
+      clipping: {}
+    };
+  }
+
+  var prototype$O = inherits(SVGStringRenderer, Renderer);
+  var base$2 = Renderer.prototype;
+
+  prototype$O.resize = function (width, height, origin, scaleFactor) {
+    base$2.resize.call(this, width, height, origin, scaleFactor);
+    var o = this._origin,
+      t = this._text;
+
+    var attr = {
+      id: 'visChart',
+      class: 'marks',
+      width: this._width * this._scale,
+      height: this._height * this._scale,
+      viewBox: '0 0 ' + this._width + ' ' + this._height
+    };
+    for (var key in metadata) {
+      attr[key] = metadata[key];
+    }
+
+    t.head = openTag('svg', attr);
+
+    var bg = this._bgcolor;
+    if (bg === 'transparent' || bg === 'none') bg = null;
+
+    if (bg) {
+      t.bg = openTag('rect', {
+        width: this._width,
+        height: this._height,
+        style: 'fill: ' + bg + ';'
+      }) + closeTag('rect');
+    } else {
+      t.bg = '';
+    }
+
+    t.root = openTag('g', {
+      transform: 'translate(' + o + ')',
+      id: 'chartContent'
+    });
+
+    t.foot = closeTag('g') + closeTag('svg');
+
+    return this;
+  };
+
+  prototype$O.background = function () {
+    var rv = base$2.background.apply(this, arguments);
+    if (arguments.length && this._text.head) {
+      this.resize(this._width, this._height, this._origin, this._scale);
+    }
+    return rv;
+  };
+
+  prototype$O.svg = function () {
+    var t = this._text;
+    return t.head + t.bg + t.defs + t.root + t.body + t.foot;
+  };
+
+  prototype$O._render = function (scene) {
+    id$1.reset();
+    this._text.body = this.mark(scene);
+    this._text.defs = this.buildDefs();
+    return this;
+  };
+
+  prototype$O.buildDefs = function () {
+    var all = this._defs,
+      defs = '',
+      i, id, def, tag, stops;
+
+    for (id in all.gradient) {
+      def = all.gradient[id];
+      stops = def.stops;
+
+      if (def.gradient === 'radial') {
+        // SVG radial gradients automatically transform to normalized bbox
+        // coordinates, in a way that is cumbersome to replicate in canvas.
+        // So we wrap the radial gradient in a pattern element, allowing us
+        // to mantain a circular gradient that matches what canvas provides.
+
+        defs += openTag(tag = 'pattern', {
+          id: patternPrefix + id,
+          viewBox: '0,0,1,1',
+          width: '100%',
+          height: '100%',
+          preserveAspectRatio: 'xMidYMid slice'
+        });
+
+        defs += openTag('rect', {
+          width: '1',
+          height: '1',
+          fill: 'url(#' + id + ')'
+        }) + closeTag('rect');
+
+        defs += closeTag(tag);
+
+        defs += openTag(tag = 'radialGradient', {
+          id: id,
+          fx: def.x1,
+          fy: def.y1,
+          fr: def.r1,
+          cx: def.x2,
+          cy: def.y2,
+          r: def.r2
+        });
+      } else {
+        defs += openTag(tag = 'linearGradient', {
+          id: id,
+          x1: def.x1,
+          x2: def.x2,
+          y1: def.y1,
+          y2: def.y2
+        });
+      }
+
+      for (i = 0; i < stops.length; ++i) {
+        defs += openTag('stop', {
+          offset: stops[i].offset,
+          'stop-color': stops[i].color
+        }) + closeTag('stop');
+      }
+
+      defs += closeTag(tag);
+    }
+
+    for (id in all.clipping) {
+      def = all.clipping[id];
+
+      defs += openTag('clipPath', { id: id });
+
+      if (def.path) {
+        defs += openTag('path', {
+          d: def.path
+        }) + closeTag('path');
+      } else {
+        defs += openTag('rect', {
+          x: 0,
+          y: 0,
+          width: def.width,
+          height: def.height
+        }) + closeTag('rect');
+      }
+
+      defs += closeTag('clipPath');
+    }
+
+    return (defs.length > 0) ? openTag('defs') + defs + closeTag('defs') : '';
+  };
+
+  var object$2;
+
+  function emit$1(name, value, ns, prefixed) {
+    object$2[prefixed || name] = value;
+  }
+
+  prototype$O.attributes = function (attr, item) {
+    object$2 = {};
+    attr(emit$1, item, this);
+    return object$2;
+  };
+
+  prototype$O.href = function (item) {
+    var that = this,
+      href = item.href,
+      attr;
+
+    if (href) {
+      if (attr = that._hrefs && that._hrefs[href]) {
+        return attr;
+      } else {
+        that.sanitizeURL(href).then(function (attr) {
+          // rewrite to use xlink namespace
+          // note that this will be deprecated in SVG 2.0
+          attr['xlink:href'] = attr.href;
+          attr.href = null;
+          (that._hrefs || (that._hrefs = {}))[href] = attr;
+        });
+      }
+    }
+    return null;
+  };
+
+  prototype$O.mark = function (scene) {
+    var renderer = this,
+      mdef = Marks[scene.marktype],
+      tag = mdef.tag,
+      defs = this._defs,
+      str = '',
+      style;
+
+    if (tag !== 'g' && scene.interactive === false) {
+      style = 'style="pointer-events: none;"';
+    }
+
+    // render opening group tag
+    str += openTag('g', {
+      'class': cssClass(scene),
+      'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null
+    }, style);
+    if (scene.role == 'axis' || scene.role == 'legend') {
+      debugger;
+    }
+
+    // render contained elements
+    function process(item) {
+      var href = renderer.href(item);
+      if (href) str += openTag('a', href);
+
+      style = (tag !== 'g') ? applyStyles(item, scene, tag, defs) : null;
+      str += openTag(tag, renderer.attributes(mdef.attr, item), style);
+
+      if (tag === 'text') {
+        str += escape_text(textValue(item));
+      } else if (tag === 'g') {
+        str += openTag('path', renderer.attributes(mdef.background, item),
+          applyStyles(item, scene, 'bgrect', defs)) + closeTag('path');
+
+        str += openTag('g', renderer.attributes(mdef.foreground, item))
+          + renderer.markGroup(item)
+          + closeTag('g');
+      }
+
+      str += closeTag(tag);
+      if (href) str += closeTag('a');
+    }
+
+    if (mdef.nested) {
+      if (scene.items && scene.items.length) process(scene.items[0]);
+    } else {
+      visit(scene, process);
+    }
+
+    // render closing group tag
+    return str + closeTag('g');
+  };
+
+  prototype$O.markGroup = function (scene) {
+    var renderer = this,
+      str = '';
+
+    visit(scene, function (item) {
+      str += renderer.mark(item);
+    });
+
+    return str;
+  };
+
+  function applyStyles(o, mark, tag, defs) {
+    if (o == null) return '';
+    var i, n, prop, name, value, s = '';
+
+    if (tag === 'bgrect' && mark.interactive === false) {
+      s += 'pointer-events: none; ';
+    }
+
+    if (tag === 'text') {
+      s += 'font-family: ' + fontFamily(o) + '; ';
+      s += 'font-size: ' + fontSize(o) + 'px; ';
+      if (o.fontStyle) s += 'font-style: ' + o.fontStyle + '; ';
+      if (o.fontVariant) s += 'font-variant: ' + o.fontVariant + '; ';
+      if (o.fontWeight) s += 'font-weight: ' + o.fontWeight + '; ';
+    }
+
+    for (i = 0, n = styleProperties.length; i < n; ++i) {
+      prop = styleProperties[i];
+      name = styles[prop];
+      value = o[prop];
+
+      if (value == null) {
+        if (name === 'fill') {
+          s += 'fill: none; ';
+        }
+      } else if (value === 'transparent' && (name === 'fill' || name === 'stroke')) {
+        // transparent is not a legal SVG value, so map to none instead
+        s += name + ': none; ';
+      } else {
+        if (isGradient(value)) {
+          value = gradientRef(value, defs.gradient, '');
+        }
+        s += name + ': ' + value + '; ';
+      }
+    }
+
+    return s ? 'style="' + s.trim() + '"' : null;
+  }
+
+  function escape_text(s) {
+    return s.replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  var Canvas = 'canvas';
+  var PNG = 'png';
+  var SVG = 'svg';
+  var None$2 = 'none';
+
+  var RenderType = {
+    Canvas: Canvas,
+    PNG:    PNG,
+    SVG:    SVG,
+    None:   None$2
+  };
+
+  var modules = {};
+
+  modules[Canvas] = modules[PNG] = {
+    renderer: CanvasRenderer,
+    headless: CanvasRenderer,
+    handler:  CanvasHandler
+  };
+
+  modules[SVG] = {
+    renderer: SVGRenderer,
+    headless: SVGStringRenderer,
+    handler:  SVGHandler
+  };
+
+  modules[None$2] = {};
+
+  function renderModule(name, _) {
+    name = String(name || '').toLowerCase();
+    if (arguments.length > 1) {
+      modules[name] = _;
+      return this;
+    } else {
+      return modules[name];
+    }
+  }
+
+  function intersect$2(scene, bounds, filter) {
+    const hits = [], // intersection results
+          box = new Bounds().union(bounds), // defensive copy
+          type = scene.marktype;
+
+    return type ? intersectMark(scene, box, filter, hits)
+      : type === 'group' ? intersectGroup(scene, box, filter, hits)
+      : error('Intersect scene must be mark node or group item.');
+  }
+
+  function intersectMark(mark, box, filter, hits) {
+    if (visitMark(mark, box, filter)) {
+      const items = mark.items,
+            type = mark.marktype,
+            n = items.length;
+
+      let i = 0;
+
+      if (type === 'group') {
+        for (; i<n; ++i) {
+          intersectGroup(items[i], box, filter, hits);
+        }
+      } else {
+        for (const test = Marks[type].isect; i<n; ++i) {
+          let item = items[i];
+          if (intersectItem(item, box, test)) hits.push(item);
+        }
+      }
+    }
+    return hits;
+  }
+
+  function visitMark(mark, box, filter) {
+    // process if bounds intersect and if
+    // (1) mark is a group mark (so we must recurse), or
+    // (2) mark is interactive and passes filter
+    return mark.bounds && box.intersects(mark.bounds) && (
+      mark.marktype === 'group' ||
+      mark.interactive !== false && (!filter || filter(mark))
+    );
+  }
+
+  function intersectGroup(group, box, filter, hits) {
+    // test intersect against group
+    // skip groups by default unless filter says otherwise
+    if ((filter && filter(group.mark)) &&
+        intersectItem(group, box, Marks.group.isect)) {
+      hits.push(group);
+    }
+
+    // recursively test children marks
+    // translate box to group coordinate space
+    const marks = group.items,
+          n = marks && marks.length;
+
+    if (n) {
+      const x = group.x || 0,
+            y = group.y || 0;
+      box.translate(-x, -y);
+      for (let i=0; i<n; ++i) {
+        intersectMark(marks[i], box, filter, hits);
+      }
+      box.translate(x, y);
+    }
+
+    return hits;
+  }
+
+  function intersectItem(item, box, test) {
+    // test bounds enclosure, bounds intersection, then detailed test
+    const bounds = item.bounds;
+    return box.encloses(bounds) || (box.intersects(bounds) && test(item, box));
+  }
+
+  var clipBounds = new Bounds();
+
+  function boundClip(mark) {
+    var clip = mark.clip;
+
+    if (isFunction(clip)) {
+      clip(context(clipBounds.clear()));
+    } else if (clip) {
+      clipBounds.set(0, 0, mark.group.width, mark.group.height);
+    } else return;
+
+    mark.bounds.intersect(clipBounds);
+  }
+
+  var TOLERANCE = 1e-9;
+
+  function sceneEqual(a, b, key) {
+    return (a === b) ? true
+      : (key === 'path') ? pathEqual(a, b)
+      : (a instanceof Date && b instanceof Date) ? +a === +b
+      : (isNumber(a) && isNumber(b)) ? Math.abs(a - b) <= TOLERANCE
+      : (!a || !b || !isObject(a) && !isObject(b)) ? a == b
+      : (a == null || b == null) ? false
+      : objectEqual(a, b);
+  }
+
+  function pathEqual(a, b) {
+    return sceneEqual(pathParse(a), pathParse(b));
+  }
+
+  function objectEqual(a, b) {
+    var ka = Object.keys(a),
+        kb = Object.keys(b),
+        key, i;
+
+    if (ka.length !== kb.length) return false;
+
+    ka.sort();
+    kb.sort();
+
+    for (i = ka.length - 1; i >= 0; i--) {
+      if (ka[i] != kb[i]) return false;
+    }
+
+    for (i = ka.length - 1; i >= 0; i--) {
+      key = ka[i];
+      if (!sceneEqual(a[key], b[key], key)) return false;
+    }
+
+    return typeof a === typeof b;
+  }
+
+  /**
+   * Calculate bounding boxes for scenegraph items.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {object} params.mark - The scenegraph mark instance to bound.
+   */
+  function Bound$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$P = inherits(Bound$1, Transform);
+
+  prototype$P.transform = function(_, pulse) {
+    var view = pulse.dataflow,
+        mark = _.mark,
+        type = mark.marktype,
+        entry = Marks[type],
+        bound = entry.bound,
+        markBounds = mark.bounds, rebound;
+
+    if (entry.nested) {
+      // multi-item marks have a single bounds instance
+      if (mark.items.length) view.dirty(mark.items[0]);
+      markBounds = boundItem$1(mark, bound);
+      mark.items.forEach(function(item) {
+        item.bounds.clear().union(markBounds);
+      });
+    }
+
+    else if (type === Group || _.modified()) {
+      // operator parameters modified -> re-bound all items
+      // updates group bounds in response to modified group content
+      pulse.visit(pulse.MOD, function(item) { view.dirty(item); });
+      markBounds.clear();
+      mark.items.forEach(function(item) {
+        markBounds.union(boundItem$1(item, bound));
+      });
+
+      // force reflow for legends to propagate any layout changes
+      // suppress other types to prevent overall layout jumpiness
+      if (mark.role === LegendRole) pulse.reflow();
+    }
+
+    else {
+      // incrementally update bounds, re-bound mark as needed
+      rebound = pulse.changed(pulse.REM);
+
+      pulse.visit(pulse.ADD, function(item) {
+        markBounds.union(boundItem$1(item, bound));
+      });
+
+      pulse.visit(pulse.MOD, function(item) {
+        rebound = rebound || markBounds.alignsWith(item.bounds);
+        view.dirty(item);
+        markBounds.union(boundItem$1(item, bound));
+      });
+
+      if (rebound) {
+        markBounds.clear();
+        mark.items.forEach(function(item) { markBounds.union(item.bounds); });
+      }
+    }
+
+    // ensure mark bounds do not exceed any clipping region
+    boundClip(mark);
+
+    return pulse.modifies('bounds');
+  };
+
+  function boundItem$1(item, bound, opt) {
+    return bound(item.bounds.clear(), item, opt);
+  }
+
+  var COUNTER_NAME = ':vega_identifier:';
+
+  /**
+   * Adds a unique identifier to all added tuples.
+   * This transform creates a new signal that serves as an id counter.
+   * As a result, the id counter is shared across all instances of this
+   * transform, generating unique ids across multiple data streams. In
+   * addition, this signal value can be included in a snapshot of the
+   * dataflow state, enabling correct resumption of id allocation.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {string} params.as - The field name for the generated identifier.
+   */
+  function Identifier$1(params) {
+    Transform.call(this, 0, params);
+  }
+
+  Identifier$1.Definition = {
+    "type": "Identifier",
+    "metadata": {"modifies": true},
+    "params": [
+      { "name": "as", "type": "string", "required": true }
+    ]
+  };
+
+  var prototype$Q = inherits(Identifier$1, Transform);
+
+  prototype$Q.transform = function(_, pulse) {
+    var counter = getCounter(pulse.dataflow),
+        id = counter.value,
+        as = _.as;
+
+    pulse.visit(pulse.ADD, function(t) {
+      if (!t[as]) t[as] = ++id;
+    });
+
+    counter.set(this.value = id);
+    return pulse;
+  };
+
+  function getCounter(view) {
+    var counter = view._signals[COUNTER_NAME];
+    if (!counter) {
+      view._signals[COUNTER_NAME] = (counter = view.add(0));
+    }
+    return counter;
+  }
+
+  /**
+   * Bind scenegraph items to a scenegraph mark instance.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {object} params.markdef - The mark definition for creating the mark.
+   *   This is an object of legal scenegraph mark properties which *must* include
+   *   the 'marktype' property.
+   */
+  function Mark$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$R = inherits(Mark$1, Transform);
+
+  prototype$R.transform = function(_, pulse) {
+    var mark = this.value;
+
+    // acquire mark on first invocation, bind context and group
+    if (!mark) {
+      mark = pulse.dataflow.scenegraph().mark(_.markdef, lookup$2(_), _.index);
+      mark.group.context = _.context;
+      if (!_.context.group) _.context.group = mark.group;
+      mark.source = this;
+      mark.clip = _.clip;
+      mark.interactive = _.interactive;
+      this.value = mark;
+    }
+
+    // initialize entering items
+    var Init = mark.marktype === Group ? GroupItem : Item;
+    pulse.visit(pulse.ADD, function(item) { Init.call(item, mark); });
+
+    // update clipping and/or interactive status
+    if (_.modified('clip') || _.modified('interactive')) {
+      mark.clip = _.clip;
+      mark.interactive = !!_.interactive;
+      mark.zdirty = true; // force scenegraph re-eval
+      pulse.reflow();
+    }
+
+    // bind items array to scenegraph mark
+    mark.items = pulse.source;
+    return pulse;
+  };
+
+  function lookup$2(_) {
+    var g = _.groups, p = _.parent;
+    return g && g.size === 1 ? g.get(Object.keys(g.object)[0])
+      : g && p ? g.lookup(p)
+      : null;
+  }
+
+  /**
+   * Analyze items for overlap, changing opacity to hide items with
+   * overlapping bounding boxes. This transform will preserve at least
+   * two items (e.g., first and last) even if overlap persists.
+   * @param {object} params - The parameters for this operator.
+   * @param {function(*,*): number} [params.sort] - A comparator
+   *   function for sorting items.
+   * @param {object} [params.method] - The overlap removal method to apply.
+   *   One of 'parity' (default, hide every other item until there is no
+   *   more overlap) or 'greedy' (sequentially scan and hide and items that
+   *   overlap with the last visible item).
+   * @param {object} [params.boundScale] - A scale whose range should be used
+   *   to bound the items. Items exceeding the bounds of the scale range
+   *   will be treated as overlapping. If null or undefined, no bounds check
+   *   will be applied.
+   * @param {object} [params.boundOrient] - The orientation of the scale
+   *   (top, bottom, left, or right) used to bound items. This parameter is
+   *   ignored if boundScale is null or undefined.
+   * @param {object} [params.boundTolerance] - The tolerance in pixels for
+   *   bound inclusion testing (default 1). This specifies by how many pixels
+   *   an item's bounds may exceed the scale range bounds and not be culled.
+   * @constructor
+   */
+  function Overlap$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$S = inherits(Overlap$1, Transform);
+
+  var methods = {
+    parity: function(items) {
+      return items.filter((item, i) => i % 2 ? (item.opacity = 0) : 1);
+    },
+    greedy: function(items, sep) {
+      var a;
+      return items.filter((b, i) => {
+        if (!i || !intersect$3(a.bounds, b.bounds, sep)) {
+          a = b;
+          return 1;
+        } else {
+          return b.opacity = 0;
+        }
+      });
+    }
+  };
+
+  // compute bounding box intersection
+  // including padding pixels of separation
+  function intersect$3(a, b, sep) {
+    return sep > Math.max(
+      b.x1 - a.x2,
+      a.x1 - b.x2,
+      b.y1 - a.y2,
+      a.y1 - b.y2
+    );
+  }
+
+  function hasOverlap(items, pad) {
+    for (var i=1, n=items.length, a=items[0].bounds, b; i<n; a=b, ++i) {
+      if (intersect$3(a, b = items[i].bounds, pad)) return true;
+    }
+  }
+
+  function hasBounds(item) {
+    var b = item.bounds;
+    return b.width() > 1 && b.height() > 1;
+  }
+
+  function boundTest(scale, orient, tolerance) {
+    var range = scale.range(),
+        b = new Bounds();
+
+    if (orient === Top || orient === Bottom) {
+      b.set(range[0], -Infinity, range[1], +Infinity);
+    } else {
+      b.set(-Infinity, range[0], +Infinity, range[1]);
+    }
+    b.expand(tolerance || 1);
+
+    return item => b.encloses(item.bounds);
+  }
+
+  // reset all items to be fully opaque
+  function reset$1(source) {
+    source.forEach(item => item.opacity = 1);
+    return source;
+  }
+
+  // add all tuples to mod, fork pulse if parameters were modified
+  // fork prevents cross-stream tuple pollution (e.g., pulse from scale)
+  function reflow(pulse, _) {
+    return pulse.reflow(_.modified()).modifies('opacity');
+  }
+
+  prototype$S.transform = function(_, pulse) {
+    var reduce = methods[_.method] || methods.parity,
+        source = pulse.materialize(pulse.SOURCE).source,
+        sep = _.separation || 0,
+        items, test, bounds;
+
+    if (!source || !source.length) return;
+
+    if (!_.method) {
+      // early exit if method is falsy
+      if (_.modified('method')) {
+        reset$1(source);
+        pulse = reflow(pulse, _);
+      }
+      return pulse;
+    }
+
+    if (_.sort) {
+      source = source.slice().sort(_.sort);
+    }
+
+    // skip labels with no content
+    source = source.filter(hasBounds);
+
+    items = reset$1(source);
+    pulse = reflow(pulse, _);
+
+    if (items.length >= 3 && hasOverlap(items, sep)) {
+      do {
+        items = reduce(items, sep);
+      } while (items.length >= 3 && hasOverlap(items, sep));
+
+      if (items.length < 3 && !peek(source).opacity) {
+        if (items.length > 1) peek(items).opacity = 0;
+        peek(source).opacity = 1;
+      }
+    }
+
+    if (_.boundScale && _.boundTolerance >= 0) {
+      test = boundTest(_.boundScale, _.boundOrient, +_.boundTolerance);
+      source.forEach(item => {
+        if (!test(item)) item.opacity = 0;
+      });
+    }
+
+    // re-calculate mark bounds
+    bounds = items[0].mark.bounds.clear();
+    source.forEach(item => {
+      if (item.opacity) bounds.union(item.bounds);
+    });
+
+    return pulse;
+  };
+
+  /**
+   * Queue modified scenegraph items for rendering.
+   * @constructor
+   */
+  function Render$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$T = inherits(Render$1, Transform);
+
+  prototype$T.transform = function(_, pulse) {
+    var view = pulse.dataflow;
+
+    pulse.visit(pulse.ALL, function(item) { view.dirty(item); });
+
+    // set z-index dirty flag as needed
+    if (pulse.fields && pulse.fields['zindex']) {
+      var item = pulse.source && pulse.source[0];
+      if (item) item.mark.zdirty = true;
+    }
+  };
+
+  const tempBounds$2 = new Bounds();
+
+  function set$1(item, property, value) {
+    return item[property] === value ? 0
+      : (item[property] = value, 1);
+  }
+
+  const AxisOffset = 0.5;
+
+  function isYAxis(mark) {
+    var orient = mark.items[0].datum.orient;
+    return orient === Left || orient === Right;
+  }
+
+  function axisIndices(datum) {
+    var index = +datum.grid;
+    return [
+      datum.ticks  ? index++ : -1, // ticks index
+      datum.labels ? index++ : -1, // labels index
+      index + (+datum.domain)      // title index
+    ];
+  }
+
+  function axisLayout(view, axis, width, height) {
+    var item = axis.items[0],
+        datum = item.datum,
+        orient = datum.orient,
+        indices = axisIndices(datum),
+        range = item.range,
+        offset = item.offset,
+        position = item.position,
+        minExtent = item.minExtent,
+        maxExtent = item.maxExtent,
+        title = datum.title && item.items[indices[2]].items[0],
+        titlePadding = item.titlePadding,
+        bounds = item.bounds,
+        x = 0, y = 0, i, s;
+
+    tempBounds$2.clear().union(bounds);
+    bounds.clear();
+    if ((i=indices[0]) > -1) bounds.union(item.items[i].bounds);
+    if ((i=indices[1]) > -1) bounds.union(item.items[i].bounds);
+
+    // position axis group and title
+    switch (orient) {
+      case Top:
+        x = position || 0;
+        y = -offset;
+        s = Math.max(minExtent, Math.min(maxExtent, -bounds.y1));
+        if (title) s = axisTitleLayout(title, s, titlePadding, 0, -1, bounds);
+        bounds.add(0, -s).add(range, 0);
+        break;
+      case Left:
+        x = -offset;
+        y = position || 0;
+        s = Math.max(minExtent, Math.min(maxExtent, -bounds.x1));
+        if (title) s = axisTitleLayout(title, s, titlePadding, 1, -1, bounds);
+        bounds.add(-s, 0).add(0, range);
+        break;
+      case Right:
+        x = width + offset;
+        y = position || 0;
+        s = Math.max(minExtent, Math.min(maxExtent, bounds.x2));
+        if (title) s = axisTitleLayout(title, s, titlePadding, 1, 1, bounds);
+        bounds.add(0, 0).add(s, range);
+        break;
+      case Bottom:
+        x = position || 0;
+        y = height + offset;
+        s = Math.max(minExtent, Math.min(maxExtent, bounds.y2));
+        if (title) s = axisTitleLayout(title, s, titlePadding, 0, 1, bounds);
+        bounds.add(0, 0).add(range, s);
+        break;
+      default:
+        x = item.x;
+        y = item.y;
+    }
+
+    // update bounds
+    boundStroke(bounds.translate(x, y), item);
+
+    if (set$1(item, 'x', x + AxisOffset) | set$1(item, 'y', y + AxisOffset)) {
+      item.bounds = tempBounds$2;
+      view.dirty(item);
+      item.bounds = bounds;
+      view.dirty(item);
+    }
+
+    return item.mark.bounds.clear().union(bounds);
+  }
+
+  function axisTitleLayout(title, offset, pad, isYAxis, sign, bounds) {
+    var b = title.bounds, dx = 0, dy = 0;
+
+    if (title.auto) {
+      offset += pad;
+
+      isYAxis
+        ? dx = (title.x || 0) - (title.x = sign * offset)
+        : dy = (title.y || 0) - (title.y = sign * offset);
+
+      b.translate(-dx, -dy);
+      title.mark.bounds.set(b.x1, b.y1, b.x2, b.y2);
+
+      if (isYAxis) {
+        bounds.add(0, b.y1).add(0, b.y2);
+        offset += b.width();
+      } else {
+        bounds.add(b.x1, 0).add(b.x2, 0);
+        offset += b.height();
+      }
+    } else {
+      bounds.union(b);
+    }
+
+    return offset;
+  }
+
+  function gridLayoutGroups(group) {
+    var groups = group.items,
+        n = groups.length,
+        i = 0, mark, items;
+
+    var views = {
+      marks:      [],
+      rowheaders: [],
+      rowfooters: [],
+      colheaders: [],
+      colfooters: [],
+      rowtitle: null,
+      coltitle: null
+    };
+
+    // layout axes, gather legends, collect bounds
+    for (; i<n; ++i) {
+      mark = groups[i];
+      items = mark.items;
+      if (mark.marktype === Group) {
+        switch (mark.role) {
+          case AxisRole:
+          case LegendRole:
+            break;
+          case RowHeader: views.rowheaders.push(...items); break;
+          case RowFooter: views.rowfooters.push(...items); break;
+          case ColHeader: views.colheaders.push(...items); break;
+          case ColFooter: views.colfooters.push(...items); break;
+          case RowTitle:  views.rowtitle = items[0]; break;
+          case ColTitle:  views.coltitle = items[0]; break;
+          default:        views.marks.push(...items);
+        }
+      }
+    }
+
+    return views;
+  }
+
+  function bboxFlush(item) {
+    return new Bounds().set(0, 0, item.width || 0, item.height || 0);
+  }
+
+  function bboxFull(item) {
+    var b = item.bounds.clone();
+    return b.empty()
+      ? b.set(0, 0, 0, 0)
+      : b.translate(-(item.x || 0), -(item.y || 0));
+  }
+
+  function get$2(opt, key, d) {
+    var v = isObject(opt) ? opt[key] : opt;
+    return v != null ? v : (d !== undefined ? d : 0);
+  }
+
+  function offsetValue$1(v) {
+    return v < 0 ? Math.ceil(-v) : 0;
+  }
+
+  function gridLayout(view, groups, opt) {
+    var dirty = !opt.nodirty,
+        bbox = opt.bounds === Flush ? bboxFlush : bboxFull,
+        bounds = tempBounds$2.set(0, 0, 0, 0),
+        alignCol = get$2(opt.align, Column),
+        alignRow = get$2(opt.align, Row),
+        padCol = get$2(opt.padding, Column),
+        padRow = get$2(opt.padding, Row),
+        ncols = opt.columns || groups.length,
+        nrows = ncols < 0 ? 1 : Math.ceil(groups.length / ncols),
+        n = groups.length,
+        xOffset = Array(n), xExtent = Array(ncols), xMax = 0,
+        yOffset = Array(n), yExtent = Array(nrows), yMax = 0,
+        dx = Array(n), dy = Array(n), boxes = Array(n),
+        m, i, c, r, b, g, px, py, x, y, offset;
+
+    for (i=0; i<ncols; ++i) xExtent[i] = 0;
+    for (i=0; i<nrows; ++i) yExtent[i] = 0;
+
+    // determine offsets for each group
+    for (i=0; i<n; ++i) {
+      g = groups[i];
+      b = boxes[i] = bbox(g);
+      g.x = g.x || 0; dx[i] = 0;
+      g.y = g.y || 0; dy[i] = 0;
+      c = i % ncols;
+      r = ~~(i / ncols);
+      xMax = Math.max(xMax, px = Math.ceil(b.x2));
+      yMax = Math.max(yMax, py = Math.ceil(b.y2));
+      xExtent[c] = Math.max(xExtent[c], px);
+      yExtent[r] = Math.max(yExtent[r], py);
+      xOffset[i] = padCol + offsetValue$1(b.x1);
+      yOffset[i] = padRow + offsetValue$1(b.y1);
+      if (dirty) view.dirty(groups[i]);
+    }
+
+    // set initial alignment offsets
+    for (i=0; i<n; ++i) {
+      if (i % ncols === 0) xOffset[i] = 0;
+      if (i < ncols) yOffset[i] = 0;
+    }
+
+    // enforce column alignment constraints
+    if (alignCol === Each) {
+      for (c=1; c<ncols; ++c) {
+        for (offset=0, i=c; i<n; i += ncols) {
+          if (offset < xOffset[i]) offset = xOffset[i];
+        }
+        for (i=c; i<n; i += ncols) {
+          xOffset[i] = offset + xExtent[c-1];
+        }
+      }
+    } else if (alignCol === All) {
+      for (offset=0, i=0; i<n; ++i) {
+        if (i % ncols && offset < xOffset[i]) offset = xOffset[i];
+      }
+      for (i=0; i<n; ++i) {
+        if (i % ncols) xOffset[i] = offset + xMax;
+      }
+    } else {
+      for (alignCol=false, c=1; c<ncols; ++c) {
+        for (i=c; i<n; i += ncols) {
+          xOffset[i] += xExtent[c-1];
+        }
+      }
+    }
+
+    // enforce row alignment constraints
+    if (alignRow === Each) {
+      for (r=1; r<nrows; ++r) {
+        for (offset=0, i=r*ncols, m=i+ncols; i<m; ++i) {
+          if (offset < yOffset[i]) offset = yOffset[i];
+        }
+        for (i=r*ncols; i<m; ++i) {
+          yOffset[i] = offset + yExtent[r-1];
+        }
+      }
+    } else if (alignRow === All) {
+      for (offset=0, i=ncols; i<n; ++i) {
+        if (offset < yOffset[i]) offset = yOffset[i];
+      }
+      for (i=ncols; i<n; ++i) {
+        yOffset[i] = offset + yMax;
+      }
+    } else {
+      for (alignRow=false, r=1; r<nrows; ++r) {
+        for (i=r*ncols, m=i+ncols; i<m; ++i) {
+          yOffset[i] += yExtent[r-1];
+        }
+      }
+    }
+
+    // perform horizontal grid layout
+    for (x=0, i=0; i<n; ++i) {
+      x = xOffset[i] + (i % ncols ? x : 0);
+      dx[i] += x - groups[i].x;
+    }
+
+    // perform vertical grid layout
+    for (c=0; c<ncols; ++c) {
+      for (y=0, i=c; i<n; i += ncols) {
+        y += yOffset[i];
+        dy[i] += y - groups[i].y;
+      }
+    }
+
+    // perform horizontal centering
+    if (alignCol && get$2(opt.center, Column) && nrows > 1) {
+      for (i=0; i<n; ++i) {
+        b = alignCol === All ? xMax : xExtent[i % ncols];
+        x = b - boxes[i].x2 - groups[i].x - dx[i];
+        if (x > 0) dx[i] += x / 2;
+      }
+    }
+
+    // perform vertical centering
+    if (alignRow && get$2(opt.center, Row) && ncols !== 1) {
+      for (i=0; i<n; ++i) {
+        b = alignRow === All ? yMax : yExtent[~~(i / ncols)];
+        y = b - boxes[i].y2 - groups[i].y - dy[i];
+        if (y > 0) dy[i] += y / 2;
+      }
+    }
+
+    // position grid relative to anchor
+    for (i=0; i<n; ++i) {
+      bounds.union(boxes[i].translate(dx[i], dy[i]));
+    }
+    x = get$2(opt.anchor, X);
+    y = get$2(opt.anchor, Y);
+    switch (get$2(opt.anchor, Column)) {
+      case End:    x -= bounds.width(); break;
+      case Middle: x -= bounds.width() / 2;
+    }
+    switch (get$2(opt.anchor, Row)) {
+      case End:    y -= bounds.height(); break;
+      case Middle: y -= bounds.height() / 2;
+    }
+    x = Math.round(x);
+    y = Math.round(y);
+
+    // update mark positions, bounds, dirty
+    bounds.clear();
+    for (i=0; i<n; ++i) {
+      groups[i].mark.bounds.clear();
+    }
+    for (i=0; i<n; ++i) {
+      g = groups[i];
+      g.x += (dx[i] += x);
+      g.y += (dy[i] += y);
+      bounds.union(g.mark.bounds.union(g.bounds.translate(dx[i], dy[i])));
+      if (dirty) view.dirty(g);
+    }
+
+    return bounds;
+  }
+
+  function trellisLayout(view, group, opt) {
+    var views = gridLayoutGroups(group),
+        groups = views.marks,
+        bbox = opt.bounds === Flush ? boundFlush : boundFull,
+        off = opt.offset,
+        ncols = opt.columns || groups.length,
+        nrows = ncols < 0 ? 1 : Math.ceil(groups.length / ncols),
+        cells = nrows * ncols,
+        x, y, x2, y2, anchor, band, offset;
+
+    // -- initial grid layout
+    const bounds = gridLayout(view, groups, opt);
+
+    // -- layout grid headers and footers --
+
+    // perform row header layout
+    if (views.rowheaders) {
+      band = get$2(opt.headerBand, Row, null);
+      x = layoutHeaders(view, views.rowheaders, groups, ncols, nrows, -get$2(off, 'rowHeader'), min$2, 0, bbox, 'x1', 0, ncols, 1, band);
+    }
+
+    // perform column header layout
+    if (views.colheaders) {
+      band = get$2(opt.headerBand, Column, null);
+      y = layoutHeaders(view, views.colheaders, groups, ncols, ncols, -get$2(off, 'columnHeader'), min$2, 1, bbox, 'y1', 0, 1, ncols, band);
+    }
+
+    // perform row footer layout
+    if (views.rowfooters) {
+      band = get$2(opt.footerBand, Row, null);
+      x2 = layoutHeaders(view, views.rowfooters, groups, ncols, nrows,  get$2(off, 'rowFooter'), max$2, 0, bbox, 'x2', ncols-1, ncols, 1, band);
+    }
+
+    // perform column footer layout
+    if (views.colfooters) {
+      band = get$2(opt.footerBand, Column, null);
+      y2 = layoutHeaders(view, views.colfooters, groups, ncols, ncols,  get$2(off, 'columnFooter'), max$2, 1, bbox, 'y2', cells-ncols, 1, ncols, band);
+    }
+
+    // perform row title layout
+    if (views.rowtitle) {
+      anchor = get$2(opt.titleAnchor, Row);
+      offset = get$2(off, 'rowTitle');
+      offset = anchor === End ? x2 + offset : x - offset;
+      band = get$2(opt.titleBand, Row, 0.5);
+      layoutTitle(view, views.rowtitle, offset, 0, bounds, band);
+    }
+
+    // perform column title layout
+    if (views.coltitle) {
+      anchor = get$2(opt.titleAnchor, Column);
+      offset = get$2(off, 'columnTitle');
+      offset = anchor === End ? y2 + offset : y - offset;
+      band = get$2(opt.titleBand, Column, 0.5);
+      layoutTitle(view, views.coltitle, offset, 1, bounds, band);
+    }
+  }
+
+  function boundFlush(item, field) {
+    return field === 'x1' ? (item.x || 0)
+      : field === 'y1' ? (item.y || 0)
+      : field === 'x2' ? (item.x || 0) + (item.width || 0)
+      : field === 'y2' ? (item.y || 0) + (item.height || 0)
+      : undefined;
+  }
+
+  function boundFull(item, field) {
+    return item.bounds[field];
+  }
+
+  // aggregation functions for grid margin determination
+  function min$2(a, b) { return Math.floor(Math.min(a, b)); }
+  function max$2(a, b) { return Math.ceil(Math.max(a, b)); }
+
+  function layoutHeaders(view, headers, groups, ncols, limit, offset, agg, isX, bound, bf, start, stride, back, band) {
+    var n = groups.length,
+        init = 0,
+        edge = 0,
+        i, j, k, m, b, h, g, x, y;
+
+    // if no groups, early exit and return 0
+    if (!n) return init;
+
+    // compute margin
+    for (i=start; i<n; i+=stride) {
+      if (groups[i]) init = agg(init, bound(groups[i], bf));
+    }
+
+    // if no headers, return margin calculation
+    if (!headers.length) return init;
+
+    // check if number of headers exceeds number of rows or columns
+    if (headers.length > limit) {
+      view.warn('Grid headers exceed limit: ' + limit);
+      headers = headers.slice(0, limit);
+    }
+
+    // apply offset
+    init += offset;
+
+    // clear mark bounds for all headers
+    for (j=0, m=headers.length; j<m; ++j) {
+      view.dirty(headers[j]);
+      headers[j].mark.bounds.clear();
+    }
+
+    // layout each header
+    for (i=start, j=0, m=headers.length; j<m; ++j, i+=stride) {
+      h = headers[j];
+      b = h.mark.bounds;
+
+      // search for nearest group to align to
+      // necessary if table has empty cells
+      for (k=i; k >= 0 && (g = groups[k]) == null; k-=back);
+
+      // assign coordinates and update bounds
+      if (isX) {
+        x = band == null ? g.x : Math.round(g.bounds.x1 + band * g.bounds.width());
+        y = init;
+      } else {
+        x = init;
+        y = band == null ? g.y : Math.round(g.bounds.y1 + band * g.bounds.height());
+      }
+      b.union(h.bounds.translate(x - (h.x || 0), y - (h.y || 0)));
+      h.x = x;
+      h.y = y;
+      view.dirty(h);
+
+      // update current edge of layout bounds
+      edge = agg(edge, b[bf]);
+    }
+
+    return edge;
+  }
+
+  function layoutTitle(view, g, offset, isX, bounds, band) {
+    if (!g) return;
+    view.dirty(g);
+
+    // compute title coordinates
+    var x = offset, y = offset;
+    isX
+      ? (x = Math.round(bounds.x1 + band * bounds.width()))
+      : (y = Math.round(bounds.y1 + band * bounds.height()));
+
+    // assign coordinates and update bounds
+    g.bounds.translate(x - (g.x || 0), y - (g.y || 0));
+    g.mark.bounds.clear().union(g.bounds);
+    g.x = x;
+    g.y = y;
+
+    // queue title for redraw
+    view.dirty(g);
+  }
+
+  // utility for looking up legend layout configuration
+  function lookup$3(config, orient) {
+    const opt = config[orient] || {};
+    return (key, d) => opt[key] != null ? opt[key]
+      : config[key] != null ? config[key]
+      : d;
+  }
+
+  // if legends specify offset directly, use the maximum specified value
+  function offsets(legends, value) {
+    var max = -Infinity;
+    legends.forEach(item => {
+      if (item.offset != null) max = Math.max(max, item.offset);
+    });
+    return max > -Infinity ? max : value;
+  }
+
+  function legendParams(g, orient, config, xb, yb, w, h) {
+    const _ = lookup$3(config, orient),
+          offset = offsets(g, _('offset', 0)),
+          anchor = _('anchor', Start),
+          mult = anchor === End ? 1 : anchor === Middle ? 0.5 : 0;
+
+    const p = {
+      align:   Each,
+      bounds:  _('bounds', Flush),
+      columns: _('direction') === 'vertical' ? 1 : g.length,
+      padding: _('margin', 8),
+      center:  _('center'),
+      nodirty: true
+    };
+
+    switch (orient) {
+      case Left:
+        p.anchor = {
+          x: Math.floor(xb.x1) - offset, column: End,
+          y: mult * (h || xb.height() + 2 * xb.y1), row: anchor
+        };
+        break;
+      case Right:
+        p.anchor = {
+          x: Math.ceil(xb.x2) + offset,
+          y: mult * (h || xb.height() + 2 * xb.y1), row: anchor
+        };
+        break;
+      case Top:
+        p.anchor = {
+          y: Math.floor(yb.y1) - offset, row: End,
+          x: mult * (w || yb.width() + 2 * yb.x1), column: anchor
+        };
+        break;
+      case Bottom:
+        p.anchor = {
+          y: Math.ceil(yb.y2) + offset,
+          x: mult * (w || yb.width() + 2 * yb.x1), column: anchor
+        };
+        break;
+      case TopLeft:
+        p.anchor = {x: offset, y: offset};
+        break;
+      case TopRight:
+        p.anchor = {x: w - offset, y: offset, column: End};
+        break;
+      case BottomLeft:
+        p.anchor = {x: offset, y: h - offset, row: End};
+        break;
+      case BottomRight:
+        p.anchor = {x: w - offset, y: h - offset, column: End, row: End};
+        break;
+    }
+
+    return p;
+  }
+
+  function legendLayout(view, legend) {
+    var item = legend.items[0],
+        datum = item.datum,
+        orient = item.orient,
+        bounds = item.bounds,
+        x = item.x, y = item.y, w, h;
+
+    // cache current bounds for later comparison
+    item._bounds
+      ? item._bounds.clear().union(bounds)
+      : item._bounds = bounds.clone();
+    bounds.clear();
+
+    // adjust legend to accommodate padding and title
+    legendGroupLayout(view, item, item.items[0].items[0]);
+
+    // aggregate bounds to determine size, and include origin
+    bounds = legendBounds(item, bounds);
+    w = 2 * item.padding;
+    h = 2 * item.padding;
+    if (!bounds.empty()) {
+      w = Math.ceil(bounds.width() + w);
+      h = Math.ceil(bounds.height() + h);
+    }
+
+    if (datum.type === Symbols) {
+      legendEntryLayout(item.items[0].items[0].items[0].items);
+    }
+
+    if (orient !== None$1) {
+      item.x = x = 0;
+      item.y = y = 0;
+    }
+    item.width = w;
+    item.height = h;
+    boundStroke(bounds.set(x, y, x + w, y + h), item);
+    item.mark.bounds.clear().union(bounds);
+
+    return item;
+  }
+
+  function legendBounds(item, b) {
+    // aggregate item bounds
+    item.items.forEach(_ => b.union(_.bounds));
+
+    // anchor to legend origin
+    b.x1 = item.padding;
+    b.y1 = item.padding;
+
+    return b;
+  }
+
+  function legendGroupLayout(view, item, entry) {
+    var pad = item.padding,
+        ex = pad - entry.x,
+        ey = pad - entry.y;
+
+    if (!item.datum.title) {
+      if (ex || ey) translate$2(view, entry, ex, ey);
+    } else {
+      var title = item.items[1].items[0],
+          anchor = title.anchor,
+          tpad = item.titlePadding || 0,
+          tx = pad - title.x,
+          ty = pad - title.y;
+
+      switch (title.orient) {
+        case Left:
+          ex += Math.ceil(title.bounds.width()) + tpad;
+          break;
+        case Right:
+        case Bottom:
+          break;
+        default:
+          ey += title.fontSize + tpad;
+      }
+      if (ex || ey) translate$2(view, entry, ex, ey);
+
+      switch (title.orient) {
+        case Left:
+          ty += legendTitleOffset(item, entry, title, anchor, 0, 1);
+          break;
+        case Right:
+          tx += legendTitleOffset(item, entry, title, End, 1, 0) + tpad;
+          ty += legendTitleOffset(item, entry, title, anchor, 0, 1);
+          break;
+        case Bottom:
+          tx += legendTitleOffset(item, entry, title, anchor, 1, 0);
+          ty += legendTitleOffset(item, entry, title, End, 0, 0, 1) + tpad;
+          break;
+        default:
+          tx += legendTitleOffset(item, entry, title, anchor, 1, 0);
+      }
+      if (tx || ty) translate$2(view, title, tx, ty);
+
+      // translate legend if title pushes into negative coordinates
+      if ((tx = Math.round(title.bounds.x1 - pad)) < 0) {
+        translate$2(view, entry, -tx, 0);
+        translate$2(view, title, -tx, 0);
+      }
+    }
+  }
+
+  function legendTitleOffset(item, entry, title, anchor, x, lr, noBar) {
+    const grad = item.datum.type !== 'symbol',
+          vgrad = title.datum.vgrad,
+          e = grad && (lr || !vgrad) && !noBar ? entry.items[0] : entry,
+          s = e.bounds[x ? 'x2' : 'y2'] - item.padding,
+          u = vgrad && lr ? s : 0,
+          v = vgrad && lr ? 0 : s;
+
+    return Math.round(anchor === Start ? u : anchor === End ? v : 0.5 * s);
+  }
+
+  function translate$2(view, item, dx, dy) {
+    item.x += dx;
+    item.y += dy;
+    item.bounds.translate(dx, dy);
+    item.mark.bounds.translate(dx, dy);
+    view.dirty(item);
+  }
+
+  function legendEntryLayout(entries) {
+    // get max widths for each column
+    var widths = entries.reduce(function(w, g) {
+      w[g.column] = Math.max(g.bounds.x2 - g.x, w[g.column] || 0);
+      return w;
+    }, {});
+
+    // set dimensions of legend entry groups
+    entries.forEach(function(g) {
+      g.width  = widths[g.column];
+      g.height = g.bounds.y2 - g.y;
+    });
+  }
+
+  function titleLayout(view, title, width, height, viewBounds) {
+    var item = title.items[0],
+        frame = item.frame,
+        orient = item.orient,
+        anchor = item.anchor,
+        offset = item.offset,
+        bounds = item.bounds,
+        vertical = (orient === Left || orient === Right),
+        start = 0,
+        end = vertical ? height : width,
+        x = 0, y = 0, pos;
+
+    if (frame !== Group) {
+      orient === Left ? (start = viewBounds.y2, end = viewBounds.y1)
+        : orient === Right ? (start = viewBounds.y1, end = viewBounds.y2)
+        : (start = viewBounds.x1, end = viewBounds.x2);
+    } else if (orient === Left) {
+      start = height, end = 0;
+    }
+
+    pos = (anchor === Start) ? start
+      : (anchor === End) ? end
+      : (start + end) / 2;
+
+    tempBounds$2.clear().union(bounds);
+
+    // position title text
+    switch (orient) {
+      case Top:
+        x = pos;
+        y = viewBounds.y1 - offset;
+        break;
+      case Left:
+        x = viewBounds.x1 - offset;
+        y = pos;
+        break;
+      case Right:
+        x = viewBounds.x2 + offset;
+        y = pos;
+        break;
+      case Bottom:
+        x = pos;
+        y = viewBounds.y2 + offset;
+        break;
+      default:
+        x = item.x;
+        y = item.y;
+    }
+
+    bounds.translate(x - (item.x || 0), y - (item.y || 0));
+    if (set$1(item, 'x', x) | set$1(item, 'y', y)) {
+      item.bounds = tempBounds$2;
+      view.dirty(item);
+      item.bounds = bounds;
+      view.dirty(item);
+    }
+
+    // update bounds
+    return title.bounds.clear().union(bounds);
+  }
+
+  /**
+   * Layout view elements such as axes and legends.
+   * Also performs size adjustments.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {object} params.mark - Scenegraph mark of groups to layout.
+   */
+  function ViewLayout$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$U = inherits(ViewLayout$1, Transform);
+
+  prototype$U.transform = function(_, pulse) {
+    // TODO incremental update, output?
+    var view = pulse.dataflow;
+    _.mark.items.forEach(function(group) {
+      if (_.layout) trellisLayout(view, group, _.layout);
+      layoutGroup(view, group, _);
+    });
+    if (_.modified()) pulse.reflow();
+    return pulse;
+  };
+
+  function layoutGroup(view, group, _) {
+    var items = group.items,
+        width = Math.max(0, group.width || 0),
+        height = Math.max(0, group.height || 0),
+        viewBounds = new Bounds().set(0, 0, width, height),
+        xBounds = viewBounds.clone(),
+        yBounds = viewBounds.clone(),
+        legends = [], title,
+        mark, orient, b, i, n;
+
+    // layout axes, gather legends, collect bounds
+    for (i=0, n=items.length; i<n; ++i) {
+      mark = items[i];
+      switch (mark.role) {
+        case AxisRole:
+          b = isYAxis(mark) ? xBounds : yBounds;
+          b.union(axisLayout(view, mark, width, height));
+          break;
+        case TitleRole:
+          title = mark;
+          break;
+        case LegendRole:
+          legends.push(legendLayout(view, mark));
+          break;
+        case FrameRole:
+        case ScopeRole:
+        case RowHeader:
+        case RowFooter:
+        case RowTitle:
+        case ColHeader:
+        case ColFooter:
+        case ColTitle:
+          xBounds.union(mark.bounds);
+          yBounds.union(mark.bounds);
+          break;
+        default:
+          viewBounds.union(mark.bounds);
+      }
+    }
+
+    // layout legends, adjust viewBounds
+    if (legends.length) {
+      // group legends by orient
+      const l = {};
+      legends.forEach(item => {
+        orient = item.orient || Right;
+        if (orient !== None$1) (l[orient] || (l[orient] = [])).push(item);
+      });
+
+      // perform grid layout for each orient group
+      for (let orient in l) {
+        const g = l[orient];
+        gridLayout(view, g, legendParams(
+          g, orient, _.legends, xBounds, yBounds, width, height
+        ));
+      }
+
+      // update view bounds
+      legends.forEach(item => {
+        const b = item.bounds;
+
+        if (!b.equals(item._bounds)) {
+          item.bounds = item._bounds;
+          view.dirty(item); // dirty previous location
+          item.bounds = b;
+          view.dirty(item);
+        }
+
+        if (_.autosize && _.autosize.type === Fit) {
+          // For autosize fit, incorporate the orthogonal dimension only.
+          // Legends that overrun the chart area will then be clipped;
+          // otherwise the chart area gets reduced to nothing!
+          switch(item.orient) {
+            case Left:
+            case Right:
+              viewBounds.add(b.x1, 0).add(b.x2, 0);
+              break;
+            case Top:
+            case Bottom:
+              viewBounds.add(0, b.y1).add(0, b.y2);
+          }
+        } else {
+          viewBounds.union(b);
+        }
+      });
+    }
+
+    // combine bounding boxes
+    viewBounds.union(xBounds).union(yBounds);
+
+    // layout title, adjust bounds
+    if (title) {
+      viewBounds.union(titleLayout(view, title, width, height, viewBounds));
+    }
+
+    // perform size adjustment
+    viewSizeLayout(view, group, viewBounds, _);
+  }
+
+  function viewSizeLayout(view, group, viewBounds, _) {
+    var auto = _.autosize || {},
+        type = auto.type,
+        viewWidth = view._width,
+        viewHeight = view._height,
+        padding = view.padding();
+
+    if (view._autosize < 1 || !type) return;
+
+    var width  = Math.max(0, group.width || 0),
+        left   = Math.max(0, Math.ceil(-viewBounds.x1)),
+        right  = Math.max(0, Math.ceil(viewBounds.x2 - width)),
+        height = Math.max(0, group.height || 0),
+        top    = Math.max(0, Math.ceil(-viewBounds.y1)),
+        bottom = Math.max(0, Math.ceil(viewBounds.y2 - height));
+
+    if (auto.contains === Padding) {
+      viewWidth -= padding.left + padding.right;
+      viewHeight -= padding.top + padding.bottom;
+    }
+
+    if (type === None$1) {
+      left = 0;
+      top = 0;
+      width = viewWidth;
+      height = viewHeight;
+    }
+
+    else if (type === Fit) {
+      width = Math.max(0, viewWidth - left - right);
+      height = Math.max(0, viewHeight - top - bottom);
+    }
+
+    else if (type === FitX) {
+      width = Math.max(0, viewWidth - left - right);
+      viewHeight = height + top + bottom;
+    }
+
+    else if (type === FitY) {
+      viewWidth = width + left + right;
+      height = Math.max(0, viewHeight - top - bottom);
+    }
+
+    else if (type === Pad) {
+      viewWidth = width + left + right;
+      viewHeight = height + top + bottom;
+    }
+
+    view._resizeView(
+      viewWidth, viewHeight,
+      width, height,
+      [left, top],
+      auto.resize
+    );
+  }
+
+
+
+  var vtx = /*#__PURE__*/Object.freeze({
+    bound: Bound$1,
+    identifier: Identifier$1,
+    mark: Mark$1,
+    overlap: Overlap$1,
+    render: Render$1,
+    viewlayout: ViewLayout$1
+  });
+
+  /**
+   * Determine the tick count or interval function.
+   * @param {Scale} scale - The scale for which to generate tick values.
+   * @param {*} count - The desired tick count or interval specifier.
+   * @param {number} minStep - The desired minimum step between tick values.
+   * @return {*} - The tick count or interval function.
+   */
+  function tickCount(scale, count, minStep) {
+    var step;
+
+    if (isNumber(count) && minStep != null) {
+      count = Math.min(count, ~~(span(scale.domain()) / minStep) || 1);
+    }
+
+    if (isObject(count)) {
+      step = count.step;
+      count = count.interval;
+    }
+
+    if (isString(count)) {
+      count = timeInterval(count, scale.type)
+            || error('Only time and utc scales accept interval strings.');
+      if (step) count = count.every(step);
+    }
+
+    return count;
+  }
+
+  /**
+   * Filter a set of candidate tick values, ensuring that only tick values
+   * that lie within the scale range are included.
+   * @param {Scale} scale - The scale for which to generate tick values.
+   * @param {Array<*>} ticks - The candidate tick values.
+   * @param {*} count - The tick count or interval function.
+   * @return {Array<*>} - The filtered tick values.
+   */
+  function validTicks(scale, ticks, count) {
+    var range = scale.range(),
+        lo = Math.floor(range[0]),
+        hi = Math.ceil(peek(range));
+
+    if (lo > hi) {
+      range = hi;
+      hi = lo;
+      lo = range;
+    }
+
+    ticks = ticks.filter(function(v) {
+      v = scale(v);
+      return lo <= v && v <= hi;
+    });
+
+    if (count > 0 && ticks.length > 1) {
+      var endpoints = [ticks[0], peek(ticks)];
+      while (ticks.length > count && ticks.length >= 3) {
+        ticks = ticks.filter(function(_, i) { return !(i % 2); });
+      }
+      if (ticks.length < 3) {
+        ticks = endpoints;
+      }
+    }
+
+    return ticks;
+  }
+
+  /**
+   * Generate tick values for the given scale and approximate tick count or
+   * interval value. If the scale has a 'ticks' method, it will be used to
+   * generate the ticks, with the count argument passed as a parameter. If the
+   * scale lacks a 'ticks' method, the full scale domain will be returned.
+   * @param {Scale} scale - The scale for which to generate tick values.
+   * @param {*} [count] - The approximate number of desired ticks.
+   * @return {Array<*>} - The generated tick values.
+   */
+  function tickValues(scale, count) {
+    return scale.bins ? validTicks(scale, binValues(scale.bins, count))
+      : scale.ticks ? scale.ticks(count)
+      : scale.domain();
+  }
+
+  /**
+   * Generate tick values for an array of bin values.
+   * @param {Array<*>} bins - An array of bin boundaries.
+   * @param {Number} [count] - The approximate number of desired ticks.
+   * @return {Array<*>} - The generated tick values.
+   */
+  function binValues(bins, count) {
+    var n = bins.length,
+        stride = ~~(n / (count || n));
+
+    return stride < 2
+      ? bins.slice()
+      : bins.filter(function(x, i) { return !(i % stride); });
+  }
+
+  /**
+   * Generate a label format function for a scale. If the scale has a
+   * 'tickFormat' method, it will be used to generate the formatter, with the
+   * count and specifier arguments passed as parameters. If the scale lacks a
+   * 'tickFormat' method, the returned formatter performs simple string coercion.
+   * If the input scale is a logarithmic scale and the format specifier does not
+   * indicate a desired decimal precision, a special variable precision formatter
+   * that automatically trims trailing zeroes will be generated.
+   * @param {Scale} scale - The scale for which to generate the label formatter.
+   * @param {*} [count] - The approximate number of desired ticks.
+   * @param {string} [specifier] - The format specifier. Must be a legal d3
+   *   specifier string (see https://github.com/d3/d3-format#formatSpecifier).
+   * @return {function(*):string} - The generated label formatter.
+   */
+  function tickFormat(scale, count, specifier, formatType) {
+    var format = scale.tickFormat ? scale.tickFormat(count, specifier)
+      : specifier && formatType === Time ? timeFormat(specifier)
+      : specifier ? format$1(specifier)
+      : String;
+
+    if (isLogarithmic(scale.type)) {
+      var logfmt = variablePrecision(specifier);
+      format = scale.bins ? logfmt : filter$2(format, logfmt);
+    }
+
+    return format;
+  }
+
+  function filter$2(sourceFormat, targetFormat) {
+    return function(_) {
+      return sourceFormat(_) ? targetFormat(_) : '';
+    };
+  }
+
+  function variablePrecision(specifier) {
+    var s = formatSpecifier(specifier || ',');
+
+    if (s.precision == null) {
+      s.precision = 12;
+      switch (s.type) {
+        case '%': s.precision -= 2; break;
+        case 'e': s.precision -= 1; break;
+      }
+      return trimZeroes(
+        format$1(s),          // number format
+        format$1('.1f')(1)[1] // decimal point character
+      );
+    } else {
+      return format$1(s);
+    }
+  }
+
+  function trimZeroes(format, decimalChar) {
+    return function(x) {
+      var str = format(x),
+          dec = str.indexOf(decimalChar),
+          idx, end;
+
+      if (dec < 0) return str;
+
+      idx = rightmostDigit(str, dec);
+      end = idx < str.length ? str.slice(idx) : '';
+      while (--idx > dec) if (str[idx] !== '0') { ++idx; break; }
+
+      return str.slice(0, idx) + end;
+    };
+  }
+
+  function rightmostDigit(str, dec) {
+    var i = str.lastIndexOf('e'), c;
+    if (i > 0) return i;
+    for (i=str.length; --i > dec;) {
+      c = str.charCodeAt(i);
+      if (c >= 48 && c <= 57) return i + 1; // is digit
+    }
+  }
+
+  /**
+   * Generates axis ticks for visualizing a spatial scale.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {Scale} params.scale - The scale to generate ticks for.
+   * @param {*} [params.count=10] - The approximate number of ticks, or
+   *   desired tick interval, to use.
+   * @param {Array<*>} [params.values] - The exact tick values to use.
+   *   These must be legal domain values for the provided scale.
+   *   If provided, the count argument is ignored.
+   * @param {function(*):string} [params.formatSpecifier] - A format specifier
+   *   to use in conjunction with scale.tickFormat. Legal values are
+   *   any valid d3 4.0 format specifier.
+   * @param {function(*):string} [params.format] - The format function to use.
+   *   If provided, the formatSpecifier argument is ignored.
+   */
+  function AxisTicks$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$V = inherits(AxisTicks$1, Transform);
+
+  prototype$V.transform = function (_, pulse) {
+    if (this.value && !_.modified()) {
+      return pulse.StopPropagation;
+    }
+
+    var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
+      ticks = this.value,
+      scale = _.scale,
+      tally = _.count == null ? (_.values ? _.values.length : 10) : _.count,
+      count = tickCount(scale, tally, _.minstep),
+      format = _.format || tickFormat(scale, count, _.formatSpecifier, _.formatType),
+      values = _.values ? validTicks(scale, _.values, count) : tickValues(scale, count);
+
+    if (ticks) out.rem = ticks;
+    console.log(scale);
+
+    ticks = values.map(function (value, i) {
+      return ingest({
+        index: i / (values.length - 1 || 1),
+        value: value,
+        label: format(value)
+      });
+    });
+
+    if (_.extra && ticks.length) {
+      // add an extra tick pegged to the initial domain value
+      // this is used to generate axes with 'binned' domains
+      ticks.push(ingest({
+        index: -1,
+        extra: { value: ticks[0].value },
+        label: ''
+      }));
+    }
+
+    out.source = ticks;
+    out.add = ticks;
+    this.value = ticks;
+
+    return out;
+  };
+
+  /**
+   * Joins a set of data elements against a set of visual items.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {function(object): object} [params.item] - An item generator function.
+   * @param {function(object): *} [params.key] - The key field associating data and visual items.
+   */
+  function DataJoin$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$W = inherits(DataJoin$1, Transform);
+
+  function defaultItemCreate() {
+    return ingest({});
+  }
+
+  function isExit(t) {
+    return t.exit;
+  }
+
+  prototype$W.transform = function(_, pulse) {
+    var df = pulse.dataflow,
+        out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
+        item = _.item || defaultItemCreate,
+        key = _.key || tupleid,
+        map = this.value;
+
+    // prevent transient (e.g., hover) requests from
+    // cascading across marks derived from marks
+    if (isArray(out.encode)) {
+      out.encode = null;
+    }
+
+    if (map && (_.modified('key') || pulse.modified(key))) {
+      error('DataJoin does not support modified key function or fields.');
+    }
+
+    if (!map) {
+      pulse = pulse.addAll();
+      this.value = map = fastmap().test(isExit);
+      map.lookup = function(t) { return map.get(key(t)); };
+    }
+
+    pulse.visit(pulse.ADD, function(t) {
+      var k = key(t),
+          x = map.get(k);
+
+      if (x) {
+        if (x.exit) {
+          map.empty--;
+          out.add.push(x);
+        } else {
+          out.mod.push(x);
+        }
+      } else {
+        map.set(k, (x = item(t)));
+        out.add.push(x);
+      }
+
+      x.datum = t;
+      x.exit = false;
+    });
+
+    pulse.visit(pulse.MOD, function(t) {
+      var k = key(t),
+          x = map.get(k);
+
+      if (x) {
+        x.datum = t;
+        out.mod.push(x);
+      }
+    });
+
+    pulse.visit(pulse.REM, function(t) {
+      var k = key(t),
+          x = map.get(k);
+
+      if (t === x.datum && !x.exit) {
+        out.rem.push(x);
+        x.exit = true;
+        ++map.empty;
+      }
+    });
+
+    if (pulse.changed(pulse.ADD_MOD)) out.modifies('datum');
+
+    if (_.clean && map.empty > df.cleanThreshold) df.runAfter(map.clean);
+
+    return out;
+  };
+
+  /**
+   * Invokes encoding functions for visual items.
+   * @constructor
+   * @param {object} params - The parameters to the encoding functions. This
+   *   parameter object will be passed through to all invoked encoding functions.
+   * @param {object} [params.mod=false] - Flag indicating if tuples in the input
+   *   mod set that are unmodified by encoders should be included in the output.
+   * @param {object} param.encoders - The encoding functions
+   * @param {function(object, object): boolean} [param.encoders.update] - Update encoding set
+   * @param {function(object, object): boolean} [param.encoders.enter] - Enter encoding set
+   * @param {function(object, object): boolean} [param.encoders.exit] - Exit encoding set
+   */
+  function Encode$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$X = inherits(Encode$1, Transform);
+
+  prototype$X.transform = function(_, pulse) {
+    var out = pulse.fork(pulse.ADD_REM),
+        fmod = _.mod || false,
+        encoders = _.encoders,
+        encode = pulse.encode;
+
+    // if an array, the encode directive includes additional sets
+    // that must be defined in order for the primary set to be invoked
+    // e.g., only run the update set if the hover set is defined
+    if (isArray(encode)) {
+      if (out.changed() || encode.every(function(e) { return encoders[e]; })) {
+        encode = encode[0];
+        out.encode = null; // consume targeted encode directive
+      } else {
+        return pulse.StopPropagation;
+      }
+    }
+
+    // marshall encoder functions
+    var reenter = encode === 'enter',
+        update = encoders.update || falsy,
+        enter = encoders.enter || falsy,
+        exit = encoders.exit || falsy,
+        set = (encode && !reenter ? encoders[encode] : update) || falsy;
+
+    if (pulse.changed(pulse.ADD)) {
+      pulse.visit(pulse.ADD, function(t) { enter(t, _); update(t, _); });
+      out.modifies(enter.output);
+      out.modifies(update.output);
+      if (set !== falsy && set !== update) {
+        pulse.visit(pulse.ADD, function(t) { set(t, _); });
+        out.modifies(set.output);
+      }
+    }
+
+    if (pulse.changed(pulse.REM) && exit !== falsy) {
+      pulse.visit(pulse.REM, function(t) { exit(t, _); });
+      out.modifies(exit.output);
+    }
+
+    if (reenter || set !== falsy) {
+      var flag = pulse.MOD | (_.modified() ? pulse.REFLOW : 0);
+      if (reenter) {
+        pulse.visit(flag, function(t) {
+          var mod = enter(t, _) || fmod;
+          if (set(t, _) || mod) out.mod.push(t);
+        });
+        if (out.mod.length) out.modifies(enter.output);
+      } else {
+        pulse.visit(flag, function(t) {
+          if (set(t, _) || fmod) out.mod.push(t);
+        });
+      }
+      if (out.mod.length) out.modifies(set.output);
+    }
+
+    return out.changed() ? out : pulse.StopPropagation;
+  };
+
+  var Symbols$2  = 'symbol';
+  var Discrete$1 = 'discrete';
+  var Gradient$2 = 'gradient';
+
+  const symbols$1 = {
+    [Quantile]:  'quantiles',
+    [Quantize]:  'thresholds',
+    [Threshold]: 'domain'
+  };
+
+  const formats$1 = {
+    [Quantile]:  'quantiles',
+    [Quantize]:  'domain'
+  };
+
+  function labelValues(scale, count) {
+    return scale.bins ? binValues$1(scale.bins)
+      : symbols$1[scale.type] ? thresholdValues(scale[symbols$1[scale.type]]())
+      : tickValues(scale, count);
+  }
+
+  function thresholdFormat(scale, specifier) {
+    var _ = scale[formats$1[scale.type]](),
+        n = _.length,
+        d = n > 1 ? _[1] - _[0] : _[0], i;
+
+    for (i=1; i<n; ++i) {
+      d = Math.min(d, _[i] - _[i-1]);
+    }
+
+    // 3 ticks times 10 for increased resolution
+    return spanFormat(0, d, 3 * 10, specifier);
+  }
+
+  function thresholdValues(thresholds) {
+    const values = [-Infinity].concat(thresholds);
+    values.max = +Infinity;
+
+    return values;
+  }
+
+  function binValues$1(bins) {
+    const values = bins.slice(0, -1);
+    values.max = peek(bins);
+
+    return values;
+  }
+
+  function isDiscreteRange(scale) {
+    return symbols$1[scale.type] || scale.bins;
+  }
+
+  function labelFormat(scale, count, type, specifier, formatType) {
+    const format = formats$1[scale.type] && formatType !== Time
+      ? thresholdFormat(scale, specifier)
+      : tickFormat(scale, count, specifier, formatType);
+
+    return type === Symbols$2 && isDiscreteRange(scale) ? formatRange(format)
+      : type === Discrete$1 ? formatDiscrete(format)
+      : formatPoint(format);
+  }
+
+  function formatRange(format) {
+    return function(value, index, array) {
+      var limit = array[index + 1] || array.max || +Infinity,
+          lo = formatValue(value, format),
+          hi = formatValue(limit, format);
+      return lo && hi ? lo + '\u2013' + hi : hi ? '< ' + hi : '\u2265 ' + lo;
+    };
+  }
+
+  function formatDiscrete(format) {
+    return function(value, index) {
+      return index ? format(value) : null;
+    }
+  }
+
+  function formatPoint(format) {
+    return function(value) {
+      return format(value);
+    };
+  }
+
+  function formatValue(value, format) {
+    return isFinite(value) ? format(value) : null;
+  }
+
+  function labelFraction(scale) {
+    var domain = scale.domain(),
+        count = domain.length - 1,
+        lo = +domain[0],
+        hi = +peek(domain),
+        span = hi - lo;
+
+    if (scale.type === Threshold) {
+      var adjust = count ? span / count : 0.1;
+      lo -= adjust;
+      hi += adjust;
+      span = hi - lo;
+    }
+
+    return function(value) {
+      return (value - lo) / span;
+    };
+  }
+
+  /**
+   * Generates legend entries for visualizing a scale.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {Scale} params.scale - The scale to generate items for.
+   * @param {*} [params.count=5] - The approximate number of items, or
+   *   desired tick interval, to use.
+   * @param {Array<*>} [params.values] - The exact tick values to use.
+   *   These must be legal domain values for the provided scale.
+   *   If provided, the count argument is ignored.
+   * @param {string} [params.formatSpecifier] - A format specifier
+   *   to use in conjunction with scale.tickFormat. Legal values are
+   *   any valid D3 format specifier string.
+   * @param {function(*):string} [params.format] - The format function to use.
+   *   If provided, the formatSpecifier argument is ignored.
+   */
+  function LegendEntries$1(params) {
+    Transform.call(this, [], params);
+  }
+
+  var prototype$Y = inherits(LegendEntries$1, Transform);
+
+  prototype$Y.transform = function(_, pulse) {
+    if (this.value != null && !_.modified()) {
+      return pulse.StopPropagation;
+    }
+
+    var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
+        items = this.value,
+        type  = _.type || Symbols$2,
+        scale = _.scale,
+        count = tickCount(scale, _.count == null ? 5 : _.count, _.minstep),
+        format = _.format || labelFormat(scale, count, type, _.formatSpecifier, _.formatType),
+        values = _.values || labelValues(scale, count),
+        domain, fraction, size, offset;
+
+    if (items) out.rem = items;
+
+    if (type === Symbols$2) {
+      if (isFunction(size = _.size)) {
+        // if first value maps to size zero, remove from list (vega#717)
+        if (!_.values && scale(values[0]) === 0) {
+          values = values.slice(1);
+        }
+        // compute size offset for legend entries
+        offset = values.reduce(function(max, value) {
+          return Math.max(max, size(value, _));
+        }, 0);
+      } else {
+        size = constant(offset = size || 8);
+      }
+
+      items = values.map(function(value, index) {
+        return ingest({
+          index:  index,
+          label:  format(value, index, values),
+          value:  value,
+          offset: offset,
+          size:   size(value, _)
+        });
+      });
+    }
+
+    else if (type === Gradient$2) {
+      domain = scale.domain(),
+      fraction = scaleFraction(scale, domain[0], peek(domain));
+
+      // if automatic label generation produces 2 or fewer values,
+      // use the domain end points instead (fixes vega/vega#1364)
+      if (values.length < 3 && !_.values && domain[0] !== peek(domain)) {
+        values = [domain[0], peek(domain)];
+      }
+
+      items = values.map(function(value, index) {
+        return ingest({
+          index: index,
+          label: format(value, index, values),
+          value: value,
+          perc:  fraction(value)
+        });
+      });
+    }
+
+    else {
+      size = values.length - 1;
+      fraction = labelFraction(scale);
+
+      items = values.map(function(value, index) {
+        return ingest({
+          index: index,
+          label: format(value, index, values),
+          value: value,
+          perc:  index ? fraction(value) : 0,
+          perc2: index === size ? 1 : fraction(values[index+1])
+        });
+      });
+    }
+
+    out.source = items;
+    out.add = items;
+    this.value = items;
+
+    return out;
+  };
+
+  var Paths = fastmap({
+    'line': line$2,
+    'line-radial': lineR,
+    'arc': arc$2,
+    'arc-radial': arcR,
+    'curve': curve,
+    'curve-radial': curveR,
+    'orthogonal-horizontal': orthoX,
+    'orthogonal-vertical': orthoY,
+    'orthogonal-radial': orthoR,
+    'diagonal-horizontal': diagonalX,
+    'diagonal-vertical': diagonalY,
+    'diagonal-radial': diagonalR
+  });
+
+  function sourceX(t) { return t.source.x; }
+  function sourceY(t) { return t.source.y; }
+  function targetX(t) { return t.target.x; }
+  function targetY(t) { return t.target.y; }
+
+   /**
+    * Layout paths linking source and target elements.
+    * @constructor
+    * @param {object} params - The parameters for this operator.
+    */
+  function LinkPath(params) {
+    Transform.call(this, {}, params);
+  }
+
+  LinkPath.Definition = {
+    "type": "LinkPath",
+    "metadata": {"modifies": true},
+    "params": [
+      { "name": "sourceX", "type": "field", "default": "source.x" },
+      { "name": "sourceY", "type": "field", "default": "source.y" },
+      { "name": "targetX", "type": "field", "default": "target.x" },
+      { "name": "targetY", "type": "field", "default": "target.y" },
+      { "name": "orient", "type": "enum", "default": "vertical",
+        "values": ["horizontal", "vertical", "radial"] },
+      { "name": "shape", "type": "enum", "default": "line",
+        "values": ["line", "arc", "curve", "diagonal", "orthogonal"] },
+      { "name": "require", "type": "signal" },
+      { "name": "as", "type": "string", "default": "path" }
+    ]
+  };
+
+  var prototype$Z = inherits(LinkPath, Transform);
+
+  prototype$Z.transform = function(_, pulse) {
+    var sx = _.sourceX || sourceX,
+        sy = _.sourceY || sourceY,
+        tx = _.targetX || targetX,
+        ty = _.targetY || targetY,
+        as = _.as || 'path',
+        orient = _.orient || 'vertical',
+        shape = _.shape || 'line',
+        path = Paths.get(shape + '-' + orient) || Paths.get(shape);
+
+    if (!path) {
+      error('LinkPath unsupported type: ' + _.shape
+        + (_.orient ? '-' + _.orient : ''));
+    }
+
+    pulse.visit(pulse.SOURCE, function(t) {
+      t[as] = path(sx(t), sy(t), tx(t), ty(t));
+    });
+
+    return pulse.reflow(_.modified()).modifies(as);
+  };
+
+  // -- Link Path Generation Methods -----
+
+  function line$2(sx, sy, tx, ty) {
+    return 'M' + sx + ',' + sy +
+           'L' + tx + ',' + ty;
+  }
+
+  function lineR(sa, sr, ta, tr) {
+    return line$2(
+      sr * Math.cos(sa), sr * Math.sin(sa),
+      tr * Math.cos(ta), tr * Math.sin(ta)
+    );
+  }
+
+  function arc$2(sx, sy, tx, ty) {
+    var dx = tx - sx,
+        dy = ty - sy,
+        rr = Math.sqrt(dx * dx + dy * dy) / 2,
+        ra = 180 * Math.atan2(dy, dx) / Math.PI;
+    return 'M' + sx + ',' + sy +
+           'A' + rr + ',' + rr +
+           ' ' + ra + ' 0 1' +
+           ' ' + tx + ',' + ty;
+  }
+
+  function arcR(sa, sr, ta, tr) {
+    return arc$2(
+      sr * Math.cos(sa), sr * Math.sin(sa),
+      tr * Math.cos(ta), tr * Math.sin(ta)
+    );
+  }
+
+  function curve(sx, sy, tx, ty) {
+    var dx = tx - sx,
+        dy = ty - sy,
+        ix = 0.2 * (dx + dy),
+        iy = 0.2 * (dy - dx);
+    return 'M' + sx + ',' + sy +
+           'C' + (sx+ix) + ',' + (sy+iy) +
+           ' ' + (tx+iy) + ',' + (ty-ix) +
+           ' ' + tx + ',' + ty;
+  }
+
+  function curveR(sa, sr, ta, tr) {
+    return curve(
+      sr * Math.cos(sa), sr * Math.sin(sa),
+      tr * Math.cos(ta), tr * Math.sin(ta)
+    );
+  }
+
+  function orthoX(sx, sy, tx, ty) {
+    return 'M' + sx + ',' + sy +
+           'V' + ty + 'H' + tx;
+  }
+
+  function orthoY(sx, sy, tx, ty) {
+    return 'M' + sx + ',' + sy +
+           'H' + tx + 'V' + ty;
+  }
+
+  function orthoR(sa, sr, ta, tr) {
+    var sc = Math.cos(sa),
+        ss = Math.sin(sa),
+        tc = Math.cos(ta),
+        ts = Math.sin(ta),
+        sf = Math.abs(ta - sa) > Math.PI ? ta <= sa : ta > sa;
+    return 'M' + (sr*sc) + ',' + (sr*ss) +
+           'A' + sr + ',' + sr + ' 0 0,' + (sf?1:0) +
+           ' ' + (sr*tc) + ',' + (sr*ts) +
+           'L' + (tr*tc) + ',' + (tr*ts);
+  }
+
+  function diagonalX(sx, sy, tx, ty) {
+    var m = (sx + tx) / 2;
+    return 'M' + sx + ',' + sy +
+           'C' + m  + ',' + sy +
+           ' ' + m  + ',' + ty +
+           ' ' + tx + ',' + ty;
+  }
+
+  function diagonalY(sx, sy, tx, ty) {
+    var m = (sy + ty) / 2;
+    return 'M' + sx + ',' + sy +
+           'C' + sx + ',' + m +
+           ' ' + tx + ',' + m +
+           ' ' + tx + ',' + ty;
+  }
+
+  function diagonalR(sa, sr, ta, tr) {
+    var sc = Math.cos(sa),
+        ss = Math.sin(sa),
+        tc = Math.cos(ta),
+        ts = Math.sin(ta),
+        mr = (sr + tr) / 2;
+    return 'M' + (sr*sc) + ',' + (sr*ss) +
+           'C' + (mr*sc) + ',' + (mr*ss) +
+           ' ' + (mr*tc) + ',' + (mr*ts) +
+           ' ' + (tr*tc) + ',' + (tr*ts);
+  }
+
+  /**
+   * Pie and donut chart layout.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {function(object): *} params.field - The value field to size pie segments.
+   * @param {number} [params.startAngle=0] - The start angle (in radians) of the layout.
+   * @param {number} [params.endAngle=2π] - The end angle (in radians) of the layout.
+   * @param {boolean} [params.sort] - Boolean flag for sorting sectors by value.
+   */
+  function Pie(params) {
+    Transform.call(this, null, params);
+  }
+
+  Pie.Definition = {
+    "type": "Pie",
+    "metadata": {"modifies": true},
+    "params": [
+      { "name": "field", "type": "field" },
+      { "name": "startAngle", "type": "number", "default": 0 },
+      { "name": "endAngle", "type": "number", "default": 6.283185307179586 },
+      { "name": "sort", "type": "boolean", "default": false },
+      { "name": "as", "type": "string", "array": true, "length": 2, "default": ["startAngle", "endAngle"] }
+    ]
+  };
+
+  var prototype$_ = inherits(Pie, Transform);
+
+  prototype$_.transform = function(_, pulse) {
+    var as = _.as || ['startAngle', 'endAngle'],
+        startAngle = as[0],
+        endAngle = as[1],
+        field = _.field || one,
+        start = _.startAngle || 0,
+        stop = _.endAngle != null ? _.endAngle : 2 * Math.PI,
+        data = pulse.source,
+        values = data.map(field),
+        n = values.length,
+        a = start,
+        k = (stop - start) / sum(values),
+        index = sequence(n),
+        i, t, v;
+
+    if (_.sort) {
+      index.sort(function(a, b) {
+        return values[a] - values[b];
+      });
+    }
+
+    for (i=0; i<n; ++i) {
+      v = values[index[i]];
+      t = data[index[i]];
+      t[startAngle] = a;
+      t[endAngle] = (a += v * k);
+    }
+
+    this.value = values;
+    return pulse.reflow(_.modified()).modifies(as);
+  };
+
+  var DEFAULT_COUNT = 5;
+
+  function includeZero(scale) {
+    const type = scale.type;
+    return !scale.bins && (
+      type === Linear$1 || type === Pow || type === Sqrt
+    );
+  }
+
+  function includePad(type) {
+    return isContinuous(type) && type !== Sequential;
+  }
+
+  var SKIP$2 = toSet([
+    'set', 'modified', 'clear', 'type', 'scheme', 'schemeExtent', 'schemeCount',
+    'domain', 'domainMin', 'domainMid', 'domainMax',
+    'domainRaw', 'domainImplicit', 'nice', 'zero', 'bins',
+    'range', 'rangeStep', 'round', 'reverse', 'interpolate', 'interpolateGamma'
+  ]);
+
+  /**
+   * Maintains a scale function mapping data values to visual channels.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   */
+  function Scale$1(params) {
+    Transform.call(this, null, params);
+    this.modified(true); // always treat as modified
+  }
+
+  var prototype$$ = inherits(Scale$1, Transform);
+
+  prototype$$.transform = function(_, pulse) {
+    var df = pulse.dataflow,
+        scale = this.value,
+        key = scaleKey(_);
+
+    if (!scale || key !== scale.type) {
+      this.value = scale = scale$1(key)();
+    }
+
+    for (key in _) if (!SKIP$2[key]) {
+      // padding is a scale property for band/point but not others
+      if (key === 'padding' && includePad(scale.type)) continue;
+      // invoke scale property setter, raise warning if not found
+      isFunction(scale[key])
+        ? scale[key](_[key])
+        : df.warn('Unsupported scale property: ' + key);
+    }
+
+    configureRange(scale, _,
+      configureBins(scale, _, configureDomain(scale, _, df))
+    );
+
+    return pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS);
+  };
+
+  function scaleKey(_) {
+    var t = _.type, d = '', n;
+
+    // backwards compatibility pre Vega 5.
+    if (t === Sequential) return Sequential + '-' + Linear$1;
+
+    if (isContinuousColor(_)) {
+      n = _.rawDomain ? _.rawDomain.length
+        : _.domain ? _.domain.length + +(_.domainMid != null)
+        : 0;
+      d = n === 2 ? Sequential + '-'
+        : n === 3 ? Diverging + '-'
+        : '';
+    }
+
+    return ((d + t) || Linear$1).toLowerCase();
+  }
+
+  function isContinuousColor(_) {
+    const t = _.type;
+    return isContinuous(t) && t !== Time && t !== UTC && (
+      _.scheme || _.range && _.range.length && _.range.every(isString)
+    );
+  }
+
+  function configureDomain(scale, _, df) {
+    // check raw domain, if provided use that and exit early
+    var raw = rawDomain(scale, _.domainRaw, df);
+    if (raw > -1) return raw;
+
+    var domain = _.domain,
+        type = scale.type,
+        zero = _.zero || (_.zero === undefined && includeZero(scale)),
+        n, mid;
+
+    if (!domain) return 0;
+
+    // adjust continuous domain for minimum pixel padding
+    if (includePad(type) && _.padding && domain[0] !== peek(domain)) {
+      domain = padDomain(type, domain, _.range, _.padding, _.exponent, _.constant);
+    }
+
+    // adjust domain based on zero, min, max settings
+    if (zero || _.domainMin != null || _.domainMax != null || _.domainMid != null) {
+      n = ((domain = domain.slice()).length - 1) || 1;
+      if (zero) {
+        if (domain[0] > 0) domain[0] = 0;
+        if (domain[n] < 0) domain[n] = 0;
+      }
+      if (_.domainMin != null) domain[0] = _.domainMin;
+      if (_.domainMax != null) domain[n] = _.domainMax;
+
+      if (_.domainMid != null) {
+        mid = _.domainMid;
+        if (mid < domain[0] || mid > domain[n]) {
+          df.warn('Scale domainMid exceeds domain min or max.', mid);
+        }
+        domain.splice(n, 0, mid);
+      }
+    }
+
+    // set the scale domain
+    scale.domain(domainCheck(type, domain, df));
+
+    // if ordinal scale domain is defined, prevent implicit
+    // domain construction as side-effect of scale lookup
+    if (type === Ordinal) {
+      scale.unknown(_.domainImplicit ? implicit : undefined);
+    }
+
+    // perform 'nice' adjustment as requested
+    if (_.nice && scale.nice) {
+      scale.nice((_.nice !== true && tickCount(scale, _.nice)) || null);
+    }
+
+    // return the cardinality of the domain
+    return domain.length;
+  }
+
+  function rawDomain(scale, raw, df) {
+    if (raw) {
+      scale.domain(domainCheck(scale.type, raw, df));
+      return raw.length;
+    } else {
+      return -1;
+    }
+  }
+
+  function padDomain(type, domain, range, pad, exponent, constant) {
+    var span = Math.abs(peek(range) - range[0]),
+        frac = span / (span - 2 * pad),
+        d = type === Log    ? zoomLog(domain, null, frac)
+          : type === Sqrt   ? zoomPow(domain, null, frac, 0.5)
+          : type === Pow    ? zoomPow(domain, null, frac, exponent || 1)
+          : type === Symlog ? zoomSymlog(domain, null, frac, constant || 1)
+          : zoomLinear(domain, null, frac);
+
+    domain = domain.slice();
+    domain[0] = d[0];
+    domain[domain.length-1] = d[1];
+    return domain;
+  }
+
+  function domainCheck(type, domain, df) {
+    if (isLogarithmic(type)) {
+      // sum signs of domain values
+      // if all pos or all neg, abs(sum) === domain.length
+      var s = Math.abs(domain.reduce(function(s, v) {
+        return s + (v < 0 ? -1 : v > 0 ? 1 : 0);
+      }, 0));
+
+      if (s !== domain.length) {
+        df.warn('Log scale domain includes zero: ' + $(domain));
+      }
+    }
+    return domain;
+  }
+
+  function configureBins(scale, _, count) {
+    let bins = _.bins;
+
+    if (bins && !isArray(bins)) {
+      // generate bin boundary array
+      const domain = (bins.start == null || bins.stop == null) && scale.domain(),
+            start = bins.start == null ? domain[0] : bins.start,
+            stop = bins.stop == null ? peek(domain) : bins.stop,
+            step = bins.step;
+
+      if (!step) error('Scale bins parameter missing step property.');
+      bins = sequence(start, stop + step, step);
+    }
+
+    if (bins) {
+      // assign bin boundaries to scale instance
+      scale.bins = bins;
+    } else if (scale.bins) {
+      // no current bins, remove bins if previously set
+      delete scale.bins;
+    }
+
+    // special handling for bin-ordinal scales
+    if (scale.type === BinOrdinal) {
+      if (!bins) {
+        // the domain specifies the bins
+        scale.bins = scale.domain();
+      } else if (!_.domain && !_.domainRaw) {
+        // the bins specify the domain
+        scale.domain(bins);
+        count = bins.length;
+      }
+    }
+
+    // return domain cardinality
+    return count;
+  }
+
+  function configureRange(scale, _, count) {
+    var round = _.round || false,
+        range = _.range;
+
+    // if range step specified, calculate full range extent
+    if (_.rangeStep != null) {
+      range = configureRangeStep(scale.type, _, count);
+    }
+
+    // else if a range scheme is defined, use that
+    else if (_.scheme) {
+      range = configureScheme(scale.type, _, count);
+      if (isFunction(range)) return scale.interpolator(range);
+    }
+
+    // given a range array for an interpolating scale, convert to interpolator
+    else if (range && isInterpolating(scale.type)) {
+      return scale.interpolator(
+        interpolateColors(flip(range, _.reverse), _.interpolate, _.interpolateGamma)
+      );
+    }
+
+    // configure rounding / interpolation
+    if (range && _.interpolate && scale.interpolate) {
+      scale.interpolate(interpolate$1(_.interpolate, _.interpolateGamma));
+    } else if (isFunction(scale.round)) {
+      scale.round(round);
+    } else if (isFunction(scale.rangeRound)) {
+      scale.interpolate(round ? interpolateRound : interpolate);
+    }
+
+    if (range) scale.range(flip(range, _.reverse));
+  }
+
+  function configureRangeStep(type, _, count) {
+    if (type !== Band && type !== Point) {
+      error('Only band and point scales support rangeStep.');
+    }
+
+    // calculate full range based on requested step size and padding
+    var outer = (_.paddingOuter != null ? _.paddingOuter : _.padding) || 0,
+        inner = type === Point ? 1
+              : ((_.paddingInner != null ? _.paddingInner : _.padding) || 0);
+    return [0, _.rangeStep * bandSpace(count, inner, outer)];
+  }
+
+  function configureScheme(type, _, count) {
+    var extent = _.schemeExtent,
+        name, scheme$1;
+
+    if (isArray(_.scheme)) {
+      scheme$1 = interpolateColors(_.scheme, _.interpolate, _.interpolateGamma);
+    } else {
+      name = _.scheme.toLowerCase();
+      scheme$1 = scheme(name);
+      if (!scheme$1) error('Unrecognized scheme name: ' + _.scheme);
+    }
+
+    // determine size for potential discrete range
+    count = (type === Threshold) ? count + 1
+      : (type === BinOrdinal) ? count - 1
+      : (type === Quantile || type === Quantize) ? (+_.schemeCount || DEFAULT_COUNT)
+      : count;
+
+    // adjust and/or quantize scheme as appropriate
+    return isInterpolating(type) ? adjustScheme(scheme$1, extent, _.reverse)
+      : isFunction(scheme$1) ? quantizeInterpolator(adjustScheme(scheme$1, extent), count)
+      : type === Ordinal ? scheme$1 : scheme$1.slice(0, count);
+  }
+
+  function adjustScheme(scheme, extent, reverse) {
+    return (isFunction(scheme) && (extent || reverse))
+      ? interpolateRange(scheme, flip(extent || [0, 1], reverse))
+      : scheme;
+  }
+
+  function flip(array, reverse) {
+    return reverse ? array.slice().reverse() : array;
+  }
+
+  /**
+   * Sorts scenegraph items in the pulse source array.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {function(*,*): number} [params.sort] - A comparator
+   *   function for sorting tuples.
+   */
+  function SortItems$1(params) {
+    Transform.call(this, null, params);
+  }
+
+  var prototype$10 = inherits(SortItems$1, Transform);
+
+  prototype$10.transform = function(_, pulse) {
+    var mod = _.modified('sort')
+           || pulse.changed(pulse.ADD)
+           || pulse.modified(_.sort.fields)
+           || pulse.modified('datum');
+
+    if (mod) pulse.source.sort(_.sort);
+
+    this.modified(mod);
+    return pulse;
+  };
+
+  var Zero = 'zero',
+      Center$1 = 'center',
+      Normalize = 'normalize',
+      DefOutput = ['y0', 'y1'];
+
+  /**
+   * Stack layout for visualization elements.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {function(object): *} params.field - The value field to stack.
+   * @param {Array<function(object): *>} [params.groupby] - An array of accessors to groupby.
+   * @param {function(object,object): number} [params.sort] - A comparator for stack sorting.
+   * @param {string} [offset='zero'] - One of 'zero', 'center', 'normalize'.
+   */
+  function Stack(params) {
+    Transform.call(this, null, params);
+  }
+
+  Stack.Definition = {
+    "type": "Stack",
+    "metadata": {"modifies": true},
+    "params": [
+      { "name": "field", "type": "field" },
+      { "name": "groupby", "type": "field", "array": true },
+      { "name": "sort", "type": "compare" },
+      { "name": "offset", "type": "enum", "default": Zero, "values": [Zero, Center$1, Normalize] },
+      { "name": "as", "type": "string", "array": true, "length": 2, "default": DefOutput }
+    ]
+  };
+
+  var prototype$11 = inherits(Stack, Transform);
+
+  prototype$11.transform = function(_, pulse) {
+    var as = _.as || DefOutput,
+        y0 = as[0],
+        y1 = as[1],
+        field = _.field || one,
+        stack = _.offset === Center$1 ? stackCenter
+              : _.offset === Normalize ? stackNormalize
+              : stackZero,
+        groups, i, n, max;
+
+    // partition, sum, and sort the stack groups
+    groups = partition$2(pulse.source, _.groupby, _.sort, field);
+
+    // compute stack layouts per group
+    for (i=0, n=groups.length, max=groups.max; i<n; ++i) {
+      stack(groups[i], max, field, y0, y1);
+    }
+
+    return pulse.reflow(_.modified()).modifies(as);
+  };
+
+  function stackCenter(group, max, field, y0, y1) {
+    var last = (max - group.sum) / 2,
+        m = group.length,
+        j = 0, t;
+
+    for (; j<m; ++j) {
+      t = group[j];
+      t[y0] = last;
+      t[y1] = (last += Math.abs(field(t)));
+    }
+  }
+
+  function stackNormalize(group, max, field, y0, y1) {
+    var scale = 1 / group.sum,
+        last = 0,
+        m = group.length,
+        j = 0, v = 0, t;
+
+    for (; j<m; ++j) {
+      t = group[j];
+      t[y0] = last;
+      t[y1] = last = scale * (v += Math.abs(field(t)));
+    }
+  }
+
+  function stackZero(group, max, field, y0, y1) {
+    var lastPos = 0,
+        lastNeg = 0,
+        m = group.length,
+        j = 0, v, t;
+
+    for (; j<m; ++j) {
+      t = group[j];
+      v = +field(t);
+      if (v < 0) {
+        t[y0] = lastNeg;
+        t[y1] = (lastNeg += v);
+      } else {
+        t[y0] = lastPos;
+        t[y1] = (lastPos += v);
+      }
+    }
+  }
+
+  function partition$2(data, groupby, sort, field) {
+    var groups = [],
+        get = function(f) { return f(t); },
+        map, i, n, m, t, k, g, s, max;
+
+    // partition data points into stack groups
+    if (groupby == null) {
+      groups.push(data.slice());
+    } else {
+      for (map={}, i=0, n=data.length; i<n; ++i) {
+        t = data[i];
+        k = groupby.map(get);
+        g = map[k];
+        if (!g) {
+          map[k] = (g = []);
+          groups.push(g);
+        }
+        g.push(t);
+      }
+    }
+
+    // compute sums of groups, sort groups as needed
+    for (k=0, max=0, m=groups.length; k<m; ++k) {
+      g = groups[k];
+      for (i=0, s=0, n=g.length; i<n; ++i) {
+        s += Math.abs(field(g[i]));
+      }
+      g.sum = s;
+      if (s > max) max = s;
+      if (sort) g.sort(sort);
+    }
+    groups.max = max;
+
+    return groups;
+  }
+
+
+
+  var encode$1 = /*#__PURE__*/Object.freeze({
+    axisticks: AxisTicks$1,
+    datajoin: DataJoin$1,
+    encode: Encode$1,
+    legendentries: LegendEntries$1,
+    linkpath: LinkPath,
+    pie: Pie,
+    scale: Scale$1,
+    sortitems: SortItems$1,
+    stack: Stack,
+    validTicks: validTicks
+  });
+
+  function ascending$2(a, b) {
+    return a < b ? -1 : a > b ? 1 : a >= b ? 0 : NaN;
+  }
+
+  function bisector$2(compare) {
+    if (compare.length === 1) compare = ascendingComparator$2(compare);
+    return {
+      left: function(a, x, lo, hi) {
+        if (lo == null) lo = 0;
+        if (hi == null) hi = a.length;
+        while (lo < hi) {
+          var mid = lo + hi >>> 1;
+          if (compare(a[mid], x) < 0) lo = mid + 1;
+          else hi = mid;
+        }
+        return lo;
+      },
+      right: function(a, x, lo, hi) {
+        if (lo == null) lo = 0;
+        if (hi == null) hi = a.length;
+        while (lo < hi) {
+          var mid = lo + hi >>> 1;
+          if (compare(a[mid], x) > 0) hi = mid;
+          else lo = mid + 1;
+        }
+        return lo;
+      }
+    };
+  }
+
+  function ascendingComparator$2(f) {
+    return function(d, x) {
+      return ascending$2(f(d), x);
+    };
+  }
+
+  var ascendingBisect$2 = bisector$2(ascending$2);
+
+  function extent$2(values, valueof) {
+    var n = values.length,
+        i = -1,
+        value,
+        min,
+        max;
+
+    if (valueof == null) {
+      while (++i < n) { // Find the first comparable value.
+        if ((value = values[i]) != null && value >= value) {
+          min = max = value;
+          while (++i < n) { // Compare the remaining values.
+            if ((value = values[i]) != null) {
+              if (min > value) min = value;
+              if (max < value) max = value;
+            }
+          }
+        }
+      }
+    }
+
+    else {
+      while (++i < n) { // Find the first comparable value.
+        if ((value = valueof(values[i], i, values)) != null && value >= value) {
+          min = max = value;
+          while (++i < n) { // Compare the remaining values.
+            if ((value = valueof(values[i], i, values)) != null) {
+              if (min > value) min = value;
+              if (max < value) max = value;
+            }
+          }
+        }
+      }
+    }
+
+    return [min, max];
+  }
+
+  function range$3(start, stop, step) {
+    start = +start, stop = +stop, step = (n = arguments.length) < 2 ? (stop = start, start = 0, 1) : n < 3 ? 1 : +step;
+
+    var i = -1,
+        n = Math.max(0, Math.ceil((stop - start) / step)) | 0,
+        range = new Array(n);
+
+    while (++i < n) {
+      range[i] = start + i * step;
+    }
+
+    return range;
+  }
+
+  var e10$1 = Math.sqrt(50),
+      e5$1 = Math.sqrt(10),
+      e2$1 = Math.sqrt(2);
+
+  function tickStep$1(start, stop, count) {
+    var step0 = Math.abs(stop - start) / Math.max(0, count),
+        step1 = Math.pow(10, Math.floor(Math.log(step0) / Math.LN10)),
+        error = step0 / step1;
+    if (error >= e10$1) step1 *= 10;
+    else if (error >= e5$1) step1 *= 5;
+    else if (error >= e2$1) step1 *= 2;
+    return stop < start ? -step1 : step1;
+  }
+
+  function thresholdSturges(values) {
+    return Math.ceil(Math.log(values.length) / Math.LN2) + 1;
+  }
+
+  function max$3(values, valueof) {
+    var n = values.length,
+        i = -1,
+        value,
+        max;
+
+    if (valueof == null) {
+      while (++i < n) { // Find the first comparable value.
+        if ((value = values[i]) != null && value >= value) {
+          max = value;
+          while (++i < n) { // Compare the remaining values.
+            if ((value = values[i]) != null && value > max) {
+              max = value;
+            }
+          }
+        }
+      }
+    }
+
+    else {
+      while (++i < n) { // Find the first comparable value.
+        if ((value = valueof(values[i], i, values)) != null && value >= value) {
+          max = value;
+          while (++i < n) { // Compare the remaining values.
+            if ((value = valueof(values[i], i, values)) != null && value > max) {
+              max = value;
+            }
+          }
+        }
+      }
+    }
+
+    return max;
+  }
+
+  var array$2 = Array.prototype;
+
+  var slice$1 = array$2.slice;
+
+  function ascending$3(a, b) {
+    return a - b;
+  }
+
+  function area$3(ring) {
+    var i = 0, n = ring.length, area = ring[n - 1][1] * ring[0][0] - ring[n - 1][0] * ring[0][1];
+    while (++i < n) area += ring[i - 1][1] * ring[i][0] - ring[i - 1][0] * ring[i][1];
+    return area;
+  }
+
+  function constant$5(x) {
+    return function() {
+      return x;
+    };
+  }
+
+  function contains(ring, hole) {
+    var i = -1, n = hole.length, c;
+    while (++i < n) if (c = ringContains(ring, hole[i])) return c;
+    return 0;
+  }
+
+  function ringContains(ring, point) {
+    var x = point[0], y = point[1], contains = -1;
+    for (var i = 0, n = ring.length, j = n - 1; i < n; j = i++) {
+      var pi = ring[i], xi = pi[0], yi = pi[1], pj = ring[j], xj = pj[0], yj = pj[1];
+      if (segmentContains(pi, pj, point)) return 0;
+      if (((yi > y) !== (yj > y)) && ((x < (xj - xi) * (y - yi) / (yj - yi) + xi))) contains = -contains;
+    }
+    return contains;
+  }
+
+  function segmentContains(a, b, c) {
+    var i; return collinear(a, b, c) && within(a[i = +(a[0] === b[0])], c[i], b[i]);
+  }
+
+  function collinear(a, b, c) {
+    return (b[0] - a[0]) * (c[1] - a[1]) === (c[0] - a[0]) * (b[1] - a[1]);
+  }
+
+  function within(p, q, r) {
+    return p <= q && q <= r || r <= q && q <= p;
+  }
+
+  function noop$3() {}
+
+  var cases = [
+    [],
+    [[[1.0, 1.5], [0.5, 1.0]]],
+    [[[1.5, 1.0], [1.0, 1.5]]],
+    [[[1.5, 1.0], [0.5, 1.0]]],
+    [[[1.0, 0.5], [1.5, 1.0]]],
+    [[[1.0, 1.5], [0.5, 1.0]], [[1.0, 0.5], [1.5, 1.0]]],
+    [[[1.0, 0.5], [1.0, 1.5]]],
+    [[[1.0, 0.5], [0.5, 1.0]]],
+    [[[0.5, 1.0], [1.0, 0.5]]],
+    [[[1.0, 1.5], [1.0, 0.5]]],
+    [[[0.5, 1.0], [1.0, 0.5]], [[1.5, 1.0], [1.0, 1.5]]],
+    [[[1.5, 1.0], [1.0, 0.5]]],
+    [[[0.5, 1.0], [1.5, 1.0]]],
+    [[[1.0, 1.5], [1.5, 1.0]]],
+    [[[0.5, 1.0], [1.0, 1.5]]],
+    []
+  ];
+
+  function contours() {
+    var dx = 1,
+        dy = 1,
+        threshold = thresholdSturges,
+        smooth = smoothLinear;
+
+    function contours(values) {
+      var tz = threshold(values);
+
+      // Convert number of thresholds into uniform thresholds.
+      if (!Array.isArray(tz)) {
+        var domain = extent$2(values), start = domain[0], stop = domain[1];
+        tz = tickStep$1(start, stop, tz);
+        tz = range$3(Math.floor(start / tz) * tz, Math.floor(stop / tz) * tz, tz);
+      } else {
+        tz = tz.slice().sort(ascending$3);
+      }
+
+      return tz.map(function(value) {
+        return contour(values, value);
+      });
+    }
+
+    // Accumulate, smooth contour rings, assign holes to exterior rings.
+    // Based on https://github.com/mbostock/shapefile/blob/v0.6.2/shp/polygon.js
+    function contour(values, value) {
+      var polygons = [],
+          holes = [];
+
+      isorings(values, value, function(ring) {
+        smooth(ring, values, value);
+        if (area$3(ring) > 0) polygons.push([ring]);
+        else holes.push(ring);
+      });
+
+      holes.forEach(function(hole) {
+        for (var i = 0, n = polygons.length, polygon; i < n; ++i) {
+          if (contains((polygon = polygons[i])[0], hole) !== -1) {
+            polygon.push(hole);
+            return;
+          }
+        }
+      });
+
+      return {
+        type: "MultiPolygon",
+        value: value,
+        coordinates: polygons
+      };
+    }
+
+    // Marching squares with isolines stitched into rings.
+    // Based on https://github.com/topojson/topojson-client/blob/v3.0.0/src/stitch.js
+    function isorings(values, value, callback) {
+      var fragmentByStart = new Array,
+          fragmentByEnd = new Array,
+          x, y, t0, t1, t2, t3;
+
+      // Special case for the first row (y = -1, t2 = t3 = 0).
+      x = y = -1;
+      t1 = values[0] >= value;
+      cases[t1 << 1].forEach(stitch);
+      while (++x < dx - 1) {
+        t0 = t1, t1 = values[x + 1] >= value;
+        cases[t0 | t1 << 1].forEach(stitch);
+      }
+      cases[t1 << 0].forEach(stitch);
+
+      // General case for the intermediate rows.
+      while (++y < dy - 1) {
+        x = -1;
+        t1 = values[y * dx + dx] >= value;
+        t2 = values[y * dx] >= value;
+        cases[t1 << 1 | t2 << 2].forEach(stitch);
+        while (++x < dx - 1) {
+          t0 = t1, t1 = values[y * dx + dx + x + 1] >= value;
+          t3 = t2, t2 = values[y * dx + x + 1] >= value;
+          cases[t0 | t1 << 1 | t2 << 2 | t3 << 3].forEach(stitch);
+        }
+        cases[t1 | t2 << 3].forEach(stitch);
+      }
+
+      // Special case for the last row (y = dy - 1, t0 = t1 = 0).
+      x = -1;
+      t2 = values[y * dx] >= value;
+      cases[t2 << 2].forEach(stitch);
+      while (++x < dx - 1) {
+        t3 = t2, t2 = values[y * dx + x + 1] >= value;
+        cases[t2 << 2 | t3 << 3].forEach(stitch);
+      }
+      cases[t2 << 3].forEach(stitch);
+
+      function stitch(line) {
+        var start = [line[0][0] + x, line[0][1] + y],
+            end = [line[1][0] + x, line[1][1] + y],
+            startIndex = index(start),
+            endIndex = index(end),
+            f, g;
+        if (f = fragmentByEnd[startIndex]) {
+          if (g = fragmentByStart[endIndex]) {
+            delete fragmentByEnd[f.end];
+            delete fragmentByStart[g.start];
+            if (f === g) {
+              f.ring.push(end);
+              callback(f.ring);
+            } else {
+              fragmentByStart[f.start] = fragmentByEnd[g.end] = {start: f.start, end: g.end, ring: f.ring.concat(g.ring)};
+            }
+          } else {
+            delete fragmentByEnd[f.end];
+            f.ring.push(end);
+            fragmentByEnd[f.end = endIndex] = f;
+          }
+        } else if (f = fragmentByStart[endIndex]) {
+          if (g = fragmentByEnd[startIndex]) {
+            delete fragmentByStart[f.start];
+            delete fragmentByEnd[g.end];
+            if (f === g) {
+              f.ring.push(end);
+              callback(f.ring);
+            } else {
+              fragmentByStart[g.start] = fragmentByEnd[f.end] = {start: g.start, end: f.end, ring: g.ring.concat(f.ring)};
+            }
+          } else {
+            delete fragmentByStart[f.start];
+            f.ring.unshift(start);
+            fragmentByStart[f.start = startIndex] = f;
+          }
+        } else {
+          fragmentByStart[startIndex] = fragmentByEnd[endIndex] = {start: startIndex, end: endIndex, ring: [start, end]};
+        }
+      }
+    }
+
+    function index(point) {
+      return point[0] * 2 + point[1] * (dx + 1) * 4;
+    }
+
+    function smoothLinear(ring, values, value) {
+      ring.forEach(function(point) {
+        var x = point[0],
+            y = point[1],
+            xt = x | 0,
+            yt = y | 0,
+            v0,
+            v1 = values[yt * dx + xt];
+        if (x > 0 && x < dx && xt === x) {
+          v0 = values[yt * dx + xt - 1];
+          point[0] = x + (value - v0) / (v1 - v0) - 0.5;
+        }
+        if (y > 0 && y < dy && yt === y) {
+          v0 = values[(yt - 1) * dx + xt];
+          point[1] = y + (value - v0) / (v1 - v0) - 0.5;
+        }
+      });
+    }
+
+    contours.contour = contour;
+
+    contours.size = function(_) {
+      if (!arguments.length) return [dx, dy];
+      var _0 = Math.ceil(_[0]), _1 = Math.ceil(_[1]);
+      if (!(_0 > 0) || !(_1 > 0)) throw new Error("invalid size");
+      return dx = _0, dy = _1, contours;
+    };
+
+    contours.thresholds = function(_) {
+      return arguments.length ? (threshold = typeof _ === "function" ? _ : Array.isArray(_) ? constant$5(slice$1.call(_)) : constant$5(_), contours) : threshold;
+    };
+
+    contours.smooth = function(_) {
+      return arguments.length ? (smooth = _ ? smoothLinear : noop$3, contours) : smooth === smoothLinear;
+    };
+
+    return contours;
+  }
+
+  // TODO Optimize edge cases.
+  // TODO Optimize index calculation.
+  // TODO Optimize arguments.
+  function blurX(source, target, r) {
+    var n = source.width,
+        m = source.height,
+        w = (r << 1) + 1;
+    for (var j = 0; j < m; ++j) {
+      for (var i = 0, sr = 0; i < n + r; ++i) {
+        if (i < n) {
+          sr += source.data[i + j * n];
+        }
+        if (i >= r) {
+          if (i >= w) {
+            sr -= source.data[i - w + j * n];
+          }
+          target.data[i - r + j * n] = sr / Math.min(i + 1, n - 1 + w - i, w);
+        }
+      }
+    }
+  }
+
+  // TODO Optimize edge cases.
+  // TODO Optimize index calculation.
+  // TODO Optimize arguments.
+  function blurY(source, target, r) {
+    var n = source.width,
+        m = source.height,
+        w = (r << 1) + 1;
+    for (var i = 0; i < n; ++i) {
+      for (var j = 0, sr = 0; j < m + r; ++j) {
+        if (j < m) {
+          sr += source.data[i + j * n];
+        }
+        if (j >= r) {
+          if (j >= w) {
+            sr -= source.data[i + (j - w) * n];
+          }
+          target.data[i + (j - r) * n] = sr / Math.min(j + 1, m - 1 + w - j, w);
+        }
+      }
+    }
+  }
+
+  function defaultX(d) {
+    return d[0];
+  }
+
+  function defaultY(d) {
+    return d[1];
+  }
+
+  function defaultWeight() {
+    return 1;
+  }
+
+  function contourDensity() {
+    var x = defaultX,
+        y = defaultY,
+        weight = defaultWeight,
+        dx = 960,
+        dy = 500,
+        r = 20, // blur radius
+        k = 2, // log2(grid cell size)
+        o = r * 3, // grid offset, to pad for blur
+        n = (dx + o * 2) >> k, // grid width
+        m = (dy + o * 2) >> k, // grid height
+        threshold = constant$5(20);
+
+    function density(data) {
+      var values0 = new Float32Array(n * m),
+          values1 = new Float32Array(n * m);
+
+      data.forEach(function(d, i, data) {
+        var xi = (+x(d, i, data) + o) >> k,
+            yi = (+y(d, i, data) + o) >> k,
+            wi = +weight(d, i, data);
+        if (xi >= 0 && xi < n && yi >= 0 && yi < m) {
+          values0[xi + yi * n] += wi;
+        }
+      });
+
+      // TODO Optimize.
+      blurX({width: n, height: m, data: values0}, {width: n, height: m, data: values1}, r >> k);
+      blurY({width: n, height: m, data: values1}, {width: n, height: m, data: values0}, r >> k);
+      blurX({width: n, height: m, data: values0}, {width: n, height: m, data: values1}, r >> k);
+      blurY({width: n, height: m, data: values1}, {width: n, height: m, data: values0}, r >> k);
+      blurX({width: n, height: m, data: values0}, {width: n, height: m, data: values1}, r >> k);
+      blurY({width: n, height: m, data: values1}, {width: n, height: m, data: values0}, r >> k);
+
+      var tz = threshold(values0);
+
+      // Convert number of thresholds into uniform thresholds.
+      if (!Array.isArray(tz)) {
+        var stop = max$3(values0);
+        tz = tickStep$1(0, stop, tz);
+        tz = range$3(0, Math.floor(stop / tz) * tz, tz);
+        tz.shift();
+      }
+
+      return contours()
+          .thresholds(tz)
+          .size([n, m])
+        (values0)
+          .map(transform);
+    }
+
+    function transform(geometry) {
+      geometry.value *= Math.pow(2, -2 * k); // Density in points per square pixel.
+      geometry.coordinates.forEach(transformPolygon);
+      return geometry;
+    }
+
+    function transformPolygon(coordinates) {
+      coordinates.forEach(transformRing);
+    }
+
+    function transformRing(coordinates) {
+      coordinates.forEach(transformPoint);
+    }
+
+    // TODO Optimize.
+    function transformPoint(coordinates) {
+      coordinates[0] = coordinates[0] * Math.pow(2, k) - o;
+      coordinates[1] = coordinates[1] * Math.pow(2, k) - o;
+    }
+
+    function resize() {
+      o = r * 3;
+      n = (dx + o * 2) >> k;
+      m = (dy + o * 2) >> k;
+      return density;
+    }
+
+    density.x = function(_) {
+      return arguments.length ? (x = typeof _ === "function" ? _ : constant$5(+_), density) : x;
+    };
+
+    density.y = function(_) {
+      return arguments.length ? (y = typeof _ === "function" ? _ : constant$5(+_), density) : y;
+    };
+
+    density.weight = function(_) {
+      return arguments.length ? (weight = typeof _ === "function" ? _ : constant$5(+_), density) : weight;
+    };
+
+    density.size = function(_) {
+      if (!arguments.length) return [dx, dy];
+      var _0 = Math.ceil(_[0]), _1 = Math.ceil(_[1]);
+      if (!(_0 >= 0) && !(_0 >= 0)) throw new Error("invalid size");
+      return dx = _0, dy = _1, resize();
+    };
+
+    density.cellSize = function(_) {
+      if (!arguments.length) return 1 << k;
+      if (!((_ = +_) >= 1)) throw new Error("invalid cell size");
+      return k = Math.floor(Math.log(_) / Math.LN2), resize();
+    };
+
+    density.thresholds = function(_) {
+      return arguments.length ? (threshold = typeof _ === "function" ? _ : Array.isArray(_) ? constant$5(slice$1.call(_)) : constant$5(_), density) : threshold;
+    };
+
+    density.bandwidth = function(_) {
+      if (!arguments.length) return Math.sqrt(r * (r + 1));
+      if (!((_ = +_) >= 0)) throw new Error("invalid bandwidth");
+      return r = Math.round((Math.sqrt(4 * _ * _ + 1) - 1) / 2), resize();
+    };
+
+    return density;
+  }
+
+  var CONTOUR_PARAMS = ['size', 'smooth'];
+  var DENSITY_PARAMS = ['x', 'y', 'weight', 'size', 'cellSize', 'bandwidth'];
+
+  /**
+   * Generate contours based on kernel-density estimation of point data.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {Array<number>} params.size - The dimensions [width, height] over which to compute contours.
+   *  If the values parameter is provided, this must be the dimensions of the input data.
+   *  If density estimation is performed, this is the output view dimensions in pixels.
+   * @param {Array<number>} [params.values] - An array of numeric values representing an
+   *  width x height grid of values over which to compute contours. If unspecified, this
+   *  transform will instead attempt to compute contours for the kernel density estimate
+   *  using values drawn from data tuples in the input pulse.
+   * @param {function(object): number} [params.x] - The pixel x-coordinate accessor for density estimation.
+   * @param {function(object): number} [params.y] - The pixel y-coordinate accessor for density estimation.
+   * @param {function(object): number} [params.weight] - The data point weight accessor for density estimation.
+   * @param {number} [params.cellSize] - Contour density calculation cell size.
+   * @param {number} [params.bandwidth] - Kernel density estimation bandwidth.
+   * @param {Array<number>} [params.thresholds] - Contour threshold array. If
+   *   this parameter is set, the count and nice parameters will be ignored.
+   * @param {number} [params.count] - The desired number of contours.
+   * @param {boolean} [params.nice] - Boolean flag indicating if the contour
+   *   threshold values should be automatically aligned to "nice"
+   *   human-friendly values. Setting this flag may cause the number of
+   *   thresholds to deviate from the specified count.
+   * @param {boolean} [params.smooth] - Boolean flag indicating if the contour
+   *   polygons should be smoothed using linear interpolation. The default is
+   *   true. The parameter is ignored when using density estimation.
+   */
+  function Contour(params) {
+    Transform.call(this, null, params);
+  }
+
+  Contour.Definition = {
+    "type": "Contour",
+    "metadata": {"generates": true},
+    "params": [
+      { "name": "size", "type": "number", "array": true, "length": 2, "required": true },
+      { "name": "values", "type": "number", "array": true },
+      { "name": "x", "type": "field" },
+      { "name": "y", "type": "field" },
+      { "name": "weight", "type": "field" },
+      { "name": "cellSize", "type": "number" },
+      { "name": "bandwidth", "type": "number" },
+      { "name": "count", "type": "number" },
+      { "name": "smooth", "type": "boolean" },
+      { "name": "nice", "type": "boolean", "default": false },
+      { "name": "thresholds", "type": "number", "array": true }
+    ]
+  };
+
+  var prototype$12 = inherits(Contour, Transform);
+
+  prototype$12.transform = function(_, pulse) {
+    if (this.value && !pulse.changed() && !_.modified())
+      return pulse.StopPropagation;
+
+    var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS),
+        count = _.count || 10,
+        contour, params, values;
+
+    if (_.values) {
+      contour = contours();
+      params = CONTOUR_PARAMS;
+      values = _.values;
+    } else {
+      contour = contourDensity();
+      params = DENSITY_PARAMS;
+      values = pulse.materialize(pulse.SOURCE).source;
+    }
+
+    // set threshold parameter
+    contour.thresholds(_.thresholds || (_.nice ? count : quantize$2(count)));
+
+    // set all other parameters
+    params.forEach(function(param) {
+      if (_[param] != null) contour[param](_[param]);
+    });
+
+    if (this.value) out.rem = this.value;
+    values = values && values.length ? contour(values).map(ingest) : [];
+    this.value = out.source = out.add = values;
+
+    return out;
+  };
+
+  function quantize$2(k) {
+    return function(values) {
+      var ex = extent$1(values), x0 = ex[0], dx = ex[1] - x0,
+          t = [], i = 1;
+      for (; i<=k; ++i) t.push(x0 + dx * i / (k + 1));
+      return t;
+    };
+  }
+
+  var Feature = 'Feature';
+  var FeatureCollection = 'FeatureCollection';
+  var MultiPoint = 'MultiPoint';
+
+  /**
+   * Consolidate an array of [longitude, latitude] points or GeoJSON features
+   * into a combined GeoJSON object. This transform is particularly useful for
+   * combining geo data for a Projection's fit argument. The resulting GeoJSON
+   * data is available as this transform's value. Input pulses are unchanged.
+   * @constructor
+   * @param {object} params - The parameters for this operator.
+   * @param {Array<function(object): *>} [params.fields] - A two-element array
+   *   of field accessors for the longitude and latitude values.
+   * @param {function(object): *} params.geojson - A field accessor for
+   *   retrieving GeoJSON feature data.
+   */
+  function GeoJSON(params) {
+    Transform.call(this, null, params);
+  }
+
+  GeoJSON.Definition = {
+    "type": "GeoJSON",
+    "metadata": {},
+    "params": [
+      { "name": "fields", "type": "field", "array": true, "length": 2 },
+      { "name": "geojson", "type": "field" },
+    ]
+  };
+
+  var prototype$13 = inherits(GeoJSON, Transform);
+
+  prototype$13.transform = function(_, pulse) {
+    var features = this._features,
+        points = this._points,
+        fields = _.fields,
+        lon = fields && fields[0],
+        lat = fields && fields[1],
+        geojson = _.geojson,
+        flag = pulse.ADD,
+        mod;
+
+    mod = _.modified()
+      || pulse.changed(pulse.REM)
+      || pulse.modified(accessorFields(geojson))
+      || (lon && (pulse.modified(accessorFields(lon))))
+      || (lat && (pulse.modified(accessorFields(lat))));
+
+    if (!this.value || mod) {
+      flag = pulse.SOURCE;
+      this._features = (features = []);
+      this._points = (points = []);
+    }
+
+    if (geojson) {
+      pulse.visit(flag, function(t) {
+        features.push(geojson(t));
+      });
+    }
+
+    if (lon && lat) {
+      pulse.visit(flag, function(t) {
+        var x = lon(t),
+            y = lat(t);
+        if (x != null && y != null && (x = +x) === x && (y = +y) === y) {
+          points.push([x, y]);
+        }
+      });
+      features = features.concat({
+        type: Feature,
+        geometry: {
+          type: MultiPoint,
+          coordinates: points
+        }
+      });
+    }
+
+    this.value = {
+      type: FeatureCollection,
+      features: features
+    };
+  };
+
   var defaultPath = geoPath();
 
   var projectionProperties = [
@@ -24770,9 +31279,9 @@
     ]
   };
 
-  var prototype$12 = inherits(GeoPath, Transform);
+  var prototype$14 = inherits(GeoPath, Transform);
 
-  prototype$12.transform = function(_, pulse) {
+  prototype$14.transform = function(_, pulse) {
     var out = pulse.fork(pulse.ALL),
         path = this.value,
         field = _.field || identity,
@@ -24832,9 +31341,9 @@
     ]
   };
 
-  var prototype$13 = inherits(GeoPoint, Transform);
+  var prototype$15 = inherits(GeoPoint, Transform);
 
-  prototype$13.transform = function(_, pulse) {
+  prototype$15.transform = function(_, pulse) {
     var proj = _.projection,
         lon = _.fields[0],
         lat = _.fields[1],
@@ -24891,9 +31400,9 @@
     ]
   };
 
-  var prototype$14 = inherits(GeoShape, Transform);
+  var prototype$16 = inherits(GeoShape, Transform);
 
-  prototype$14.transform = function(_, pulse) {
+  prototype$16.transform = function(_, pulse) {
     var out = pulse.fork(pulse.ALL),
         shape = this.value,
         as = _.as || 'shape',
@@ -24958,9 +31467,9 @@
     ]
   };
 
-  var prototype$15 = inherits(Graticule, Transform);
+  var prototype$17 = inherits(Graticule, Transform);
 
-  prototype$15.transform = function(_, pulse) {
+  prototype$17.transform = function(_, pulse) {
     var src = this.value,
         gen = this.generator, t;
 
@@ -24988,24 +31497,24 @@
    * @constructor
    * @param {object} params - The parameters for this operator.
    */
-  function Projection(params) {
+  function Projection$1(params) {
     Transform.call(this, null, params);
     this.modified(true); // always treat as modified
   }
 
-  var prototype$16 = inherits(Projection, Transform);
+  var prototype$18 = inherits(Projection$1, Transform);
 
-  prototype$16.transform = function(_, pulse) {
+  prototype$18.transform = function(_, pulse) {
     var proj = this.value;
 
     if (!proj || _.modified('type')) {
       this.value = (proj = create$2(_.type));
       projectionProperties.forEach(function(prop) {
-        if (_[prop] != null) set$1(proj, prop, _[prop]);
+        if (_[prop] != null) set$2(proj, prop, _[prop]);
       });
     } else {
       projectionProperties.forEach(function(prop) {
-        if (_.modified(prop)) set$1(proj, prop, _[prop]);
+        if (_.modified(prop)) set$2(proj, prop, _[prop]);
       });
     }
 
@@ -25027,7 +31536,7 @@
     return constructor();
   }
 
-  function set$1(proj, key, value) {
+  function set$2(proj, key, value) {
      if (isFunction(proj[key])) proj[key](value);
   }
 
@@ -25057,7 +31566,7 @@
     geopoint: GeoPoint,
     geoshape: GeoShape,
     graticule: Graticule,
-    projection: Projection
+    projection: Projection$1
   });
 
   function forceCenter(x, y) {
@@ -25609,18 +32118,18 @@
     return force;
   }
 
-  function index(d) {
+  function index$1(d) {
     return d.index;
   }
 
-  function find$1(nodeById, nodeId) {
+  function find$2(nodeById, nodeId) {
     var node = nodeById.get(nodeId);
     if (!node) throw new Error("missing: " + nodeId);
     return node;
   }
 
   function forceLink(links) {
-    var id = index,
+    var id = index$1,
         strength = defaultStrength,
         strengths,
         distance = constant$6(30),
@@ -25664,8 +32173,8 @@
 
       for (i = 0, count = new Array(n); i < m; ++i) {
         link = links[i], link.index = i;
-        if (typeof link.source !== "object") link.source = find$1(nodeById, link.source);
-        if (typeof link.target !== "object") link.target = find$1(nodeById, link.target);
+        if (typeof link.source !== "object") link.source = find$2(nodeById, link.source);
+        if (typeof link.target !== "object") link.target = find$2(nodeById, link.target);
         count[link.source.index] = (count[link.source.index] || 0) + 1;
         count[link.target.index] = (count[link.target.index] || 0) + 1;
       }
@@ -25764,8 +32273,8 @@
       // Otherwise, if a null callback was specified, remove callbacks of the given name.
       if (callback != null && typeof callback !== "function") throw new Error("invalid callback: " + callback);
       while (++i < n) {
-        if (t = (typename = T[i]).type) _[t] = set$2(_[t], typename.name, callback);
-        else if (callback == null) for (t in _) _[t] = set$2(_[t], typename.name, null);
+        if (t = (typename = T[i]).type) _[t] = set$3(_[t], typename.name, callback);
+        else if (callback == null) for (t in _) _[t] = set$3(_[t], typename.name, null);
       }
 
       return this;
@@ -25794,7 +32303,7 @@
     }
   }
 
-  function set$2(type, name, callback) {
+  function set$3(type, name, callback) {
     for (var i = 0, n = type.length; i < n; ++i) {
       if (type[i].name === name) {
         type[i] = noop$4, type = type.slice(0, i).concat(type.slice(i + 1));
@@ -25825,14 +32334,14 @@
     clockNow = 0;
   }
 
-  function Timer() {
+  function Timer$1() {
     this._call =
     this._time =
     this._next = null;
   }
 
-  Timer.prototype = timer.prototype = {
-    constructor: Timer,
+  Timer$1.prototype = timer.prototype = {
+    constructor: Timer$1,
     restart: function(callback, delay, time) {
       if (typeof callback !== "function") throw new TypeError("callback is not a function");
       time = (time == null ? now() : +time) + (delay == null ? 0 : +delay);
@@ -25855,7 +32364,7 @@
   };
 
   function timer(callback, delay, time) {
-    var t = new Timer;
+    var t = new Timer$1;
     t.restart(callback, delay, time);
     return t;
   }
@@ -25917,7 +32426,7 @@
   }
 
   function interval$1(callback, delay, time) {
-    var t = new Timer, total = delay;
+    var t = new Timer$1, total = delay;
     if (delay == null) return t.restart(callback, delay, time), t;
     delay = +delay, time = time == null ? now() : +time;
     t.restart(function tick(elapsed) {
@@ -26362,9 +32871,9 @@
     ]
   };
 
-  var prototype$17 = inherits(Force, Transform);
+  var prototype$19 = inherits(Force, Transform);
 
-  prototype$17.transform = function(_, pulse) {
+  prototype$19.transform = function(_, pulse) {
     var sim = this.value,
         change = pulse.changed(pulse.ADD_REM),
         params = _.modified(ForceParams),
@@ -26407,7 +32916,7 @@
     return this.finish(_, pulse);
   };
 
-  prototype$17.finish = function(_, pulse) {
+  prototype$19.finish = function(_, pulse) {
     var dataflow = pulse.dataflow;
 
     // inspect dependencies, touch link source data
@@ -26512,7 +33021,7 @@
   });
 
   // Build lookup table mapping tuple keys to tree node instances
-  function lookup$3(tree, key, filter) {
+  function lookup$4(tree, key, filter) {
     var map = {};
     tree.each(function(node) {
       var t = node.data;
@@ -27804,13 +34313,13 @@
     ]
   };
 
-  var prototype$18 = inherits(Nest, Transform);
+  var prototype$1a = inherits(Nest, Transform);
 
-  function children(n) {
+  function children$1(n) {
     return n.values;
   }
 
-  prototype$18.transform = function(_, pulse) {
+  prototype$1a.transform = function(_, pulse) {
     if (!pulse.source) {
       error('Nest transform requires an upstream data source.');
     }
@@ -27835,7 +34344,7 @@
         values: array(_.keys)
                   .reduce(function(n, k) { n.key(k); return n; }, nest())
                   .entries(out.source)
-      }, children);
+      }, children$1);
 
       // collect nodes to add
       if (gen) {
@@ -27849,7 +34358,7 @@
       }
 
       // build lookup table
-      lookup$3(tree, tupleid, tupleid);
+      lookup$4(tree, tupleid, tupleid);
     }
 
     out.source.root = tree;
@@ -27914,9 +34423,9 @@
     Transform.call(this, null, params);
   }
 
-  var prototype$19 = inherits(HierarchyLayout, Transform);
+  var prototype$1b = inherits(HierarchyLayout, Transform);
 
-  prototype$19.transform = function(_, pulse) {
+  prototype$1b.transform = function(_, pulse) {
     if (!pulse.source || !pulse.source.root) {
       error(this.constructor.name
         + ' transform requires a backing tree data source.');
@@ -27989,13 +34498,13 @@
     ]
   };
 
-  var prototype$1a = inherits(Pack, HierarchyLayout);
+  var prototype$1c = inherits(Pack, HierarchyLayout);
 
-  prototype$1a.layout = pack;
+  prototype$1c.layout = pack;
 
-  prototype$1a.params = ['size', 'padding'];
+  prototype$1c.params = ['size', 'padding'];
 
-  prototype$1a.fields = Output;
+  prototype$1c.fields = Output;
 
   var Output$1 = ['x0', 'y0', 'x1', 'y1', 'depth', 'children'];
 
@@ -28022,13 +34531,13 @@
     ]
   };
 
-  var prototype$1b = inherits(Partition, HierarchyLayout);
+  var prototype$1d = inherits(Partition, HierarchyLayout);
 
-  prototype$1b.layout = partition$3;
+  prototype$1d.layout = partition$3;
 
-  prototype$1b.params = ['size', 'round', 'padding'];
+  prototype$1d.params = ['size', 'round', 'padding'];
 
-  prototype$1b.fields = Output$1;
+  prototype$1d.fields = Output$1;
 
   /**
     * Stratify a collection of tuples into a tree structure based on
@@ -28051,9 +34560,9 @@
     ]
   };
 
-  var prototype$1c = inherits(Stratify, Transform);
+  var prototype$1e = inherits(Stratify, Transform);
 
-  prototype$1c.transform = function(_, pulse) {
+  prototype$1e.transform = function(_, pulse) {
     if (!pulse.source) {
       error('Stratify transform requires an upstream data source.');
     }
@@ -28072,11 +34581,11 @@
 
     if (run) {
       if (out.source.length) {
-        tree = lookup$3(
+        tree = lookup$4(
           stratify().id(_.key).parentId(_.parentKey)(out.source)
           , _.key, truthy);
       } else {
-        tree = lookup$3(stratify()([{}]), _.key, _.key);
+        tree = lookup$4(stratify()([{}]), _.key, _.key);
       }
     }
 
@@ -28115,20 +34624,20 @@
     ]
   };
 
-  var prototype$1d = inherits(Tree, HierarchyLayout);
+  var prototype$1f = inherits(Tree, HierarchyLayout);
 
   /**
    * Tree layout generator. Supports both 'tidy' and 'cluster' layouts.
    */
-  prototype$1d.layout = function(method) {
+  prototype$1f.layout = function(method) {
     var m = method || 'tidy';
     if (Layouts.hasOwnProperty(m)) return Layouts[m]();
     else error('Unrecognized Tree layout method: ' + m);
   };
 
-  prototype$1d.params = ['size', 'nodeSize'];
+  prototype$1f.params = ['size', 'nodeSize'];
 
-  prototype$1d.fields = Output$2;
+  prototype$1f.fields = Output$2;
 
   /**
     * Generate tuples representing links between tree nodes.
@@ -28147,9 +34656,9 @@
     "params": []
   };
 
-  var prototype$1e = inherits(TreeLinks, Transform);
+  var prototype$1g = inherits(TreeLinks, Transform);
 
-  prototype$1e.transform = function(_, pulse) {
+  prototype$1g.transform = function(_, pulse) {
     var links = this.value,
         tree = pulse.source && pulse.source.root,
         out = pulse.fork(pulse.NO_SOURCE),
@@ -28233,13 +34742,13 @@
     ]
   };
 
-  var prototype$1f = inherits(Treemap, HierarchyLayout);
+  var prototype$1h = inherits(Treemap, HierarchyLayout);
 
   /**
    * Treemap layout generator. Adds 'method' and 'ratio' parameters
    * to configure the underlying tile method.
    */
-  prototype$1f.layout = function() {
+  prototype$1h.layout = function() {
     var x = treemap();
     x.ratio = function(_) {
       var t = x.tile();
@@ -28252,13 +34761,13 @@
     return x;
   };
 
-  prototype$1f.params = [
+  prototype$1h.params = [
     'method', 'ratio', 'size', 'round',
     'padding', 'paddingInner', 'paddingOuter',
     'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'
   ];
 
-  prototype$1f.fields = Output$3;
+  prototype$1h.fields = Output$3;
 
 
 
@@ -28322,9 +34831,9 @@
     ]
   };
 
-  var prototype$1g = inherits(Loess, Transform);
+  var prototype$1i = inherits(Loess, Transform);
 
-  prototype$1g.transform = function(_, pulse) {
+  prototype$1i.transform = function(_, pulse) {
     var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS);
 
     if (!this.value || pulse.changed() || _.modified()) {
@@ -28397,9 +34906,9 @@
     ]
   };
 
-  var prototype$1h = inherits(Regression, Transform);
+  var prototype$1j = inherits(Regression, Transform);
 
-  prototype$1h.transform = function(_, pulse) {
+  prototype$1j.transform = function(_, pulse) {
     var out = pulse.fork(pulse.NO_SOURCE | pulse.NO_FIELDS);
 
     if (!this.value || pulse.changed() || _.modified()) {
@@ -29484,11 +35993,11 @@
     ]
   };
 
-  var prototype$1i = inherits(Voronoi, Transform);
+  var prototype$1k = inherits(Voronoi, Transform);
 
   var defaultExtent = [[-1e5, -1e5], [1e5, 1e5]];
 
-  prototype$1i.transform = function(_, pulse) {
+  prototype$1k.transform = function(_, pulse) {
     var as = _.as || 'path',
         data = pulse.source,
         diagram, polygons, i, n;
@@ -29949,7 +36458,7 @@
 
   var Output$4 = ['x', 'y', 'font', 'fontSize', 'fontStyle', 'fontWeight', 'angle'];
 
-  var Params$1 = ['text', 'font', 'rotate', 'fontSize', 'fontStyle', 'fontWeight'];
+  var Params$2 = ['text', 'font', 'rotate', 'fontSize', 'fontStyle', 'fontWeight'];
 
   function Wordcloud(params) {
     Transform.call(this, cloud(), params);
@@ -29973,9 +36482,9 @@
     ]
   };
 
-  var prototype$1j = inherits(Wordcloud, Transform);
+  var prototype$1l = inherits(Wordcloud, Transform);
 
-  prototype$1j.transform = function(_, pulse) {
+  prototype$1l.transform = function(_, pulse) {
     if (_.size && !(_.size[0] && _.size[1])) {
       error('Wordcloud size dimensions must be non-zero.');
     }
@@ -29986,7 +36495,7 @@
     }
 
     var mod = _.modified();
-    if (!(mod || pulse.changed(pulse.ADD_REM) || Params$1.some(modp))) return;
+    if (!(mod || pulse.changed(pulse.ADD_REM) || Params$2.some(modp))) return;
 
     var data = pulse.materialize(pulse.SOURCE).source,
         layout = this.value,
@@ -30230,7 +36739,7 @@
         oldi = index;
         value = Array(n0 + n1);
         index = array32(n0 + n1);
-        merge$2(base, oldv, oldi, n0, addv, addi, n1, value, index);
+        merge$3(base, oldv, oldi, n0, addv, addi, n1, value, index);
       } else {
         if (base > 0) for (i=0; i<n1; ++i) {
           addi[i] += base;
@@ -30302,7 +36811,7 @@
     return permute(values, index);
   }
 
-  function merge$2(base, value0, index0, n0, value1, index1, n1, value, index) {
+  function merge$3(base, value0, index0, n0, value1, index1, n1, value, index) {
     var i0 = 0, i1 = 0, i;
 
     for (i=0; i0 < n0 && i1 < n1; ++i) {
@@ -30349,9 +36858,9 @@
     ]
   };
 
-  var prototype$1k = inherits(CrossFilter, Transform);
+  var prototype$1m = inherits(CrossFilter, Transform);
 
-  prototype$1k.transform = function(_, pulse) {
+  prototype$1m.transform = function(_, pulse) {
     if (!this._dims) {
       return this.init(_, pulse);
     } else {
@@ -30364,7 +36873,7 @@
     }
   };
 
-  prototype$1k.init = function(_, pulse) {
+  prototype$1m.init = function(_, pulse) {
     var fields = _.fields,
         query = _.query,
         indices = this._indices = {},
@@ -30382,7 +36891,7 @@
     return this.eval(_, pulse);
   };
 
-  prototype$1k.reinit = function(_, pulse) {
+  prototype$1m.reinit = function(_, pulse) {
     var output = pulse.materialize().fork(),
         fields = _.fields,
         query = _.query,
@@ -30449,7 +36958,7 @@
     return output;
   };
 
-  prototype$1k.eval = function(_, pulse) {
+  prototype$1m.eval = function(_, pulse) {
     var output = pulse.materialize().fork(),
         m = this._dims.length,
         mask = 0;
@@ -30477,7 +36986,7 @@
     return output;
   };
 
-  prototype$1k.insert = function(_, pulse, output) {
+  prototype$1m.insert = function(_, pulse, output) {
     var tuples = pulse.add,
         bits = this.value,
         dims = this._dims,
@@ -30511,7 +37020,7 @@
     }
   };
 
-  prototype$1k.modify = function(pulse, output) {
+  prototype$1m.modify = function(pulse, output) {
     var out = output.mod,
         bits = this.value,
         curr = bits.curr(),
@@ -30525,7 +37034,7 @@
     }
   };
 
-  prototype$1k.remove = function(_, pulse, output) {
+  prototype$1m.remove = function(_, pulse, output) {
     var indices = this._indices,
         bits = this.value,
         curr = bits.curr(),
@@ -30555,7 +37064,7 @@
   };
 
   // reindex filters and indices after propagation completes
-  prototype$1k.reindex = function(pulse, num, map) {
+  prototype$1m.reindex = function(pulse, num, map) {
     var indices = this._indices,
         bits = this.value;
 
@@ -30565,7 +37074,7 @@
     });
   };
 
-  prototype$1k.update = function(_, pulse, output) {
+  prototype$1m.update = function(_, pulse, output) {
     var dims = this._dims,
         query = _.query,
         stamp = pulse.stamp,
@@ -30595,7 +37104,7 @@
     return mask;
   };
 
-  prototype$1k.incrementAll = function(dim, query, stamp, out) {
+  prototype$1m.incrementAll = function(dim, query, stamp, out) {
     var bits = this.value,
         seen = bits.seen(),
         curr = bits.curr(),
@@ -30659,7 +37168,7 @@
     dim.range = query.slice();
   };
 
-  prototype$1k.incrementOne = function(dim, query, add, rem) {
+  prototype$1m.incrementOne = function(dim, query, add, rem) {
     var bits = this.value,
         curr = bits.curr(),
         index = dim.index(),
@@ -30729,9 +37238,9 @@
     ]
   };
 
-  var prototype$1l = inherits(ResolveFilter, Transform);
+  var prototype$1n = inherits(ResolveFilter, Transform);
 
-  prototype$1l.transform = function(_, pulse) {
+  prototype$1n.transform = function(_, pulse) {
     var ignore = ~(_.ignore || 0), // bit mask where zeros -> dims to ignore
         bitmap = _.filter,
         mask = bitmap.mask;
@@ -30840,7 +37349,7 @@
     return data[name];
   }
 
-  function data(name) {
+  function data$1(name) {
     return dataref(this, name).values.value;
   }
 
@@ -30979,7 +37488,7 @@
     };
   }
 
-  var VIEW = 'view',
+  var VIEW$1 = 'view',
       TIMER = 'timer',
       WINDOW = 'window',
       NO_TRAP = {trap: false};
@@ -31029,7 +37538,7 @@
         s = new EventStream(filter),
         send = function(e, item) {
           view.runAsync(null, () => {
-            if (source === VIEW && prevent(view, type)) {
+            if (source === VIEW$1 && prevent(view, type)) {
               e.preventDefault();
             }
             s.receive(eventExtend(view, e, item));
@@ -31041,7 +37550,7 @@
       view.timer(send, type);
     }
 
-    else if (source === VIEW) {
+    else if (source === VIEW$1) {
       // send traps errors, so use {trap: false} option
       view.addEventListener(type, send, NO_TRAP);
     }
@@ -31225,7 +37734,7 @@
       case 'checkbox': input = checkbox; break;
       case 'select':   input = select; break;
       case 'radio':    input = radio; break;
-      case 'range':    input = range$3; break;
+      case 'range':    input = range$4; break;
     }
 
     input(bind, div, param, value);
@@ -31346,7 +37855,7 @@
   /**
    * Generates a slider input element.
    */
-  function range$3(bind, el, param, value) {
+  function range$4(bind, el, param, value) {
     value = value !== undefined ? value : ((+param.max) + (+param.min)) / 2;
 
     var min = param.min || Math.min(0, +value) || 0,
@@ -31427,7 +37936,7 @@
         Handler, Renderer;
 
     // containing dom element
-    el = view._el = el ? lookup$4(view, el) : null;
+    el = view._el = el ? lookup$5(view, el) : null;
 
     // select appropriate renderer & handler
     if (!module) view.error('Unrecognized renderer type: ' + type);
@@ -31442,12 +37951,12 @@
 
     // initialize signal bindings
     if (el) {
-      elBind = elBind ? (view._elBind = lookup$4(view, elBind))
+      elBind = elBind ? (view._elBind = lookup$5(view, elBind))
         : el.appendChild(element$1('div', {'class': 'vega-bindings'}));
 
       view._bind.forEach(function(_) {
         if (_.param.element) {
-          _.element = lookup$4(view, _.param.element);
+          _.element = lookup$5(view, _.param.element);
         }
       });
 
@@ -31459,7 +37968,7 @@
     return view;
   }
 
-  function lookup$4(view, el) {
+  function lookup$5(view, el) {
     if (typeof el === 'string') {
       if (typeof document !== 'undefined') {
         el = document.querySelector(el);
@@ -31544,2608 +38053,10 @@
     return r.svg();
   }
 
-  var RawCode = 'RawCode';
-  var Literal = 'Literal';
-  var Property = 'Property';
-  var Identifier$1 = 'Identifier';
-
-  var ArrayExpression = 'ArrayExpression';
-  var BinaryExpression = 'BinaryExpression';
-  var CallExpression = 'CallExpression';
-  var ConditionalExpression = 'ConditionalExpression';
-  var LogicalExpression = 'LogicalExpression';
-  var MemberExpression = 'MemberExpression';
-  var ObjectExpression = 'ObjectExpression';
-  var UnaryExpression = 'UnaryExpression';
-
-  function ASTNode(type) {
-    this.type = type;
-  }
-
-  ASTNode.prototype.visit = function(visitor) {
-    var node = this, c, i, n;
-
-    if (visitor(node)) return 1;
-
-    for (c=children$1(node), i=0, n=c.length; i<n; ++i) {
-      if (c[i].visit(visitor)) return 1;
-    }
-  };
-
-  function children$1(node) {
-    switch (node.type) {
-      case ArrayExpression:
-        return node.elements;
-      case BinaryExpression:
-      case LogicalExpression:
-        return [node.left, node.right];
-      case CallExpression:
-        var args = node.arguments.slice();
-        args.unshift(node.callee);
-        return args;
-      case ConditionalExpression:
-        return [node.test, node.consequent, node.alternate];
-      case MemberExpression:
-        return [node.object, node.property];
-      case ObjectExpression:
-        return node.properties;
-      case Property:
-        return [node.key, node.value];
-      case UnaryExpression:
-        return [node.argument];
-      case Identifier$1:
-      case Literal:
-      case RawCode:
-      default:
-        return [];
-    }
-  }
-
-  /*
-    The following expression parser is based on Esprima (http://esprima.org/).
-    Original header comment and license for Esprima is included here:
-
-    Copyright (C) 2013 Ariya Hidayat <ariya.hidayat@gmail.com>
-    Copyright (C) 2013 Thaddee Tyl <thaddee.tyl@gmail.com>
-    Copyright (C) 2013 Mathias Bynens <mathias@qiwi.be>
-    Copyright (C) 2012 Ariya Hidayat <ariya.hidayat@gmail.com>
-    Copyright (C) 2012 Mathias Bynens <mathias@qiwi.be>
-    Copyright (C) 2012 Joost-Wim Boekesteijn <joost-wim@boekesteijn.nl>
-    Copyright (C) 2012 Kris Kowal <kris.kowal@cixar.com>
-    Copyright (C) 2012 Yusuke Suzuki <utatane.tea@gmail.com>
-    Copyright (C) 2012 Arpad Borsos <arpad.borsos@googlemail.com>
-    Copyright (C) 2011 Ariya Hidayat <ariya.hidayat@gmail.com>
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are met:
-
-      * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-      * Redistributions in binary form must reproduce the above copyright
-        notice, this list of conditions and the following disclaimer in the
-        documentation and/or other materials provided with the distribution.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-    ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-    DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-    (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-    LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-    ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-    THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-  */
-
-  var TokenName,
-      source$1,
-      index$1,
-      length,
-      lookahead;
-
-  var TokenBooleanLiteral = 1,
-      TokenEOF = 2,
-      TokenIdentifier = 3,
-      TokenKeyword = 4,
-      TokenNullLiteral = 5,
-      TokenNumericLiteral = 6,
-      TokenPunctuator = 7,
-      TokenStringLiteral = 8,
-      TokenRegularExpression = 9;
-
-  TokenName = {};
-  TokenName[TokenBooleanLiteral] = 'Boolean';
-  TokenName[TokenEOF] = '<end>';
-  TokenName[TokenIdentifier] = 'Identifier';
-  TokenName[TokenKeyword] = 'Keyword';
-  TokenName[TokenNullLiteral] = 'Null';
-  TokenName[TokenNumericLiteral] = 'Numeric';
-  TokenName[TokenPunctuator] = 'Punctuator';
-  TokenName[TokenStringLiteral] = 'String';
-  TokenName[TokenRegularExpression] = 'RegularExpression';
-
-  var SyntaxArrayExpression = 'ArrayExpression',
-      SyntaxBinaryExpression = 'BinaryExpression',
-      SyntaxCallExpression = 'CallExpression',
-      SyntaxConditionalExpression = 'ConditionalExpression',
-      SyntaxIdentifier = 'Identifier',
-      SyntaxLiteral = 'Literal',
-      SyntaxLogicalExpression = 'LogicalExpression',
-      SyntaxMemberExpression = 'MemberExpression',
-      SyntaxObjectExpression = 'ObjectExpression',
-      SyntaxProperty = 'Property',
-      SyntaxUnaryExpression = 'UnaryExpression';
-
-  // Error messages should be identical to V8.
-  var MessageUnexpectedToken = 'Unexpected token %0',
-      MessageUnexpectedNumber = 'Unexpected number',
-      MessageUnexpectedString = 'Unexpected string',
-      MessageUnexpectedIdentifier = 'Unexpected identifier',
-      MessageUnexpectedReserved = 'Unexpected reserved word',
-      MessageUnexpectedEOS = 'Unexpected end of input',
-      MessageInvalidRegExp = 'Invalid regular expression',
-      MessageUnterminatedRegExp = 'Invalid regular expression: missing /',
-      MessageStrictOctalLiteral = 'Octal literals are not allowed in strict mode.',
-      MessageStrictDuplicateProperty = 'Duplicate data property in object literal not allowed in strict mode';
-
-  var ILLEGAL = 'ILLEGAL',
-      DISABLED = 'Disabled.';
-
-  // See also tools/generate-unicode-regex.py.
-    var RegexNonAsciiIdentifierStart = new RegExp("[\\xAA\\xB5\\xBA\\xC0-\\xD6\\xD8-\\xF6\\xF8-\\u02C1\\u02C6-\\u02D1\\u02E0-\\u02E4\\u02EC\\u02EE\\u0370-\\u0374\\u0376\\u0377\\u037A-\\u037D\\u037F\\u0386\\u0388-\\u038A\\u038C\\u038E-\\u03A1\\u03A3-\\u03F5\\u03F7-\\u0481\\u048A-\\u052F\\u0531-\\u0556\\u0559\\u0561-\\u0587\\u05D0-\\u05EA\\u05F0-\\u05F2\\u0620-\\u064A\\u066E\\u066F\\u0671-\\u06D3\\u06D5\\u06E5\\u06E6\\u06EE\\u06EF\\u06FA-\\u06FC\\u06FF\\u0710\\u0712-\\u072F\\u074D-\\u07A5\\u07B1\\u07CA-\\u07EA\\u07F4\\u07F5\\u07FA\\u0800-\\u0815\\u081A\\u0824\\u0828\\u0840-\\u0858\\u08A0-\\u08B2\\u0904-\\u0939\\u093D\\u0950\\u0958-\\u0961\\u0971-\\u0980\\u0985-\\u098C\\u098F\\u0990\\u0993-\\u09A8\\u09AA-\\u09B0\\u09B2\\u09B6-\\u09B9\\u09BD\\u09CE\\u09DC\\u09DD\\u09DF-\\u09E1\\u09F0\\u09F1\\u0A05-\\u0A0A\\u0A0F\\u0A10\\u0A13-\\u0A28\\u0A2A-\\u0A30\\u0A32\\u0A33\\u0A35\\u0A36\\u0A38\\u0A39\\u0A59-\\u0A5C\\u0A5E\\u0A72-\\u0A74\\u0A85-\\u0A8D\\u0A8F-\\u0A91\\u0A93-\\u0AA8\\u0AAA-\\u0AB0\\u0AB2\\u0AB3\\u0AB5-\\u0AB9\\u0ABD\\u0AD0\\u0AE0\\u0AE1\\u0B05-\\u0B0C\\u0B0F\\u0B10\\u0B13-\\u0B28\\u0B2A-\\u0B30\\u0B32\\u0B33\\u0B35-\\u0B39\\u0B3D\\u0B5C\\u0B5D\\u0B5F-\\u0B61\\u0B71\\u0B83\\u0B85-\\u0B8A\\u0B8E-\\u0B90\\u0B92-\\u0B95\\u0B99\\u0B9A\\u0B9C\\u0B9E\\u0B9F\\u0BA3\\u0BA4\\u0BA8-\\u0BAA\\u0BAE-\\u0BB9\\u0BD0\\u0C05-\\u0C0C\\u0C0E-\\u0C10\\u0C12-\\u0C28\\u0C2A-\\u0C39\\u0C3D\\u0C58\\u0C59\\u0C60\\u0C61\\u0C85-\\u0C8C\\u0C8E-\\u0C90\\u0C92-\\u0CA8\\u0CAA-\\u0CB3\\u0CB5-\\u0CB9\\u0CBD\\u0CDE\\u0CE0\\u0CE1\\u0CF1\\u0CF2\\u0D05-\\u0D0C\\u0D0E-\\u0D10\\u0D12-\\u0D3A\\u0D3D\\u0D4E\\u0D60\\u0D61\\u0D7A-\\u0D7F\\u0D85-\\u0D96\\u0D9A-\\u0DB1\\u0DB3-\\u0DBB\\u0DBD\\u0DC0-\\u0DC6\\u0E01-\\u0E30\\u0E32\\u0E33\\u0E40-\\u0E46\\u0E81\\u0E82\\u0E84\\u0E87\\u0E88\\u0E8A\\u0E8D\\u0E94-\\u0E97\\u0E99-\\u0E9F\\u0EA1-\\u0EA3\\u0EA5\\u0EA7\\u0EAA\\u0EAB\\u0EAD-\\u0EB0\\u0EB2\\u0EB3\\u0EBD\\u0EC0-\\u0EC4\\u0EC6\\u0EDC-\\u0EDF\\u0F00\\u0F40-\\u0F47\\u0F49-\\u0F6C\\u0F88-\\u0F8C\\u1000-\\u102A\\u103F\\u1050-\\u1055\\u105A-\\u105D\\u1061\\u1065\\u1066\\u106E-\\u1070\\u1075-\\u1081\\u108E\\u10A0-\\u10C5\\u10C7\\u10CD\\u10D0-\\u10FA\\u10FC-\\u1248\\u124A-\\u124D\\u1250-\\u1256\\u1258\\u125A-\\u125D\\u1260-\\u1288\\u128A-\\u128D\\u1290-\\u12B0\\u12B2-\\u12B5\\u12B8-\\u12BE\\u12C0\\u12C2-\\u12C5\\u12C8-\\u12D6\\u12D8-\\u1310\\u1312-\\u1315\\u1318-\\u135A\\u1380-\\u138F\\u13A0-\\u13F4\\u1401-\\u166C\\u166F-\\u167F\\u1681-\\u169A\\u16A0-\\u16EA\\u16EE-\\u16F8\\u1700-\\u170C\\u170E-\\u1711\\u1720-\\u1731\\u1740-\\u1751\\u1760-\\u176C\\u176E-\\u1770\\u1780-\\u17B3\\u17D7\\u17DC\\u1820-\\u1877\\u1880-\\u18A8\\u18AA\\u18B0-\\u18F5\\u1900-\\u191E\\u1950-\\u196D\\u1970-\\u1974\\u1980-\\u19AB\\u19C1-\\u19C7\\u1A00-\\u1A16\\u1A20-\\u1A54\\u1AA7\\u1B05-\\u1B33\\u1B45-\\u1B4B\\u1B83-\\u1BA0\\u1BAE\\u1BAF\\u1BBA-\\u1BE5\\u1C00-\\u1C23\\u1C4D-\\u1C4F\\u1C5A-\\u1C7D\\u1CE9-\\u1CEC\\u1CEE-\\u1CF1\\u1CF5\\u1CF6\\u1D00-\\u1DBF\\u1E00-\\u1F15\\u1F18-\\u1F1D\\u1F20-\\u1F45\\u1F48-\\u1F4D\\u1F50-\\u1F57\\u1F59\\u1F5B\\u1F5D\\u1F5F-\\u1F7D\\u1F80-\\u1FB4\\u1FB6-\\u1FBC\\u1FBE\\u1FC2-\\u1FC4\\u1FC6-\\u1FCC\\u1FD0-\\u1FD3\\u1FD6-\\u1FDB\\u1FE0-\\u1FEC\\u1FF2-\\u1FF4\\u1FF6-\\u1FFC\\u2071\\u207F\\u2090-\\u209C\\u2102\\u2107\\u210A-\\u2113\\u2115\\u2119-\\u211D\\u2124\\u2126\\u2128\\u212A-\\u212D\\u212F-\\u2139\\u213C-\\u213F\\u2145-\\u2149\\u214E\\u2160-\\u2188\\u2C00-\\u2C2E\\u2C30-\\u2C5E\\u2C60-\\u2CE4\\u2CEB-\\u2CEE\\u2CF2\\u2CF3\\u2D00-\\u2D25\\u2D27\\u2D2D\\u2D30-\\u2D67\\u2D6F\\u2D80-\\u2D96\\u2DA0-\\u2DA6\\u2DA8-\\u2DAE\\u2DB0-\\u2DB6\\u2DB8-\\u2DBE\\u2DC0-\\u2DC6\\u2DC8-\\u2DCE\\u2DD0-\\u2DD6\\u2DD8-\\u2DDE\\u2E2F\\u3005-\\u3007\\u3021-\\u3029\\u3031-\\u3035\\u3038-\\u303C\\u3041-\\u3096\\u309D-\\u309F\\u30A1-\\u30FA\\u30FC-\\u30FF\\u3105-\\u312D\\u3131-\\u318E\\u31A0-\\u31BA\\u31F0-\\u31FF\\u3400-\\u4DB5\\u4E00-\\u9FCC\\uA000-\\uA48C\\uA4D0-\\uA4FD\\uA500-\\uA60C\\uA610-\\uA61F\\uA62A\\uA62B\\uA640-\\uA66E\\uA67F-\\uA69D\\uA6A0-\\uA6EF\\uA717-\\uA71F\\uA722-\\uA788\\uA78B-\\uA78E\\uA790-\\uA7AD\\uA7B0\\uA7B1\\uA7F7-\\uA801\\uA803-\\uA805\\uA807-\\uA80A\\uA80C-\\uA822\\uA840-\\uA873\\uA882-\\uA8B3\\uA8F2-\\uA8F7\\uA8FB\\uA90A-\\uA925\\uA930-\\uA946\\uA960-\\uA97C\\uA984-\\uA9B2\\uA9CF\\uA9E0-\\uA9E4\\uA9E6-\\uA9EF\\uA9FA-\\uA9FE\\uAA00-\\uAA28\\uAA40-\\uAA42\\uAA44-\\uAA4B\\uAA60-\\uAA76\\uAA7A\\uAA7E-\\uAAAF\\uAAB1\\uAAB5\\uAAB6\\uAAB9-\\uAABD\\uAAC0\\uAAC2\\uAADB-\\uAADD\\uAAE0-\\uAAEA\\uAAF2-\\uAAF4\\uAB01-\\uAB06\\uAB09-\\uAB0E\\uAB11-\\uAB16\\uAB20-\\uAB26\\uAB28-\\uAB2E\\uAB30-\\uAB5A\\uAB5C-\\uAB5F\\uAB64\\uAB65\\uABC0-\\uABE2\\uAC00-\\uD7A3\\uD7B0-\\uD7C6\\uD7CB-\\uD7FB\\uF900-\\uFA6D\\uFA70-\\uFAD9\\uFB00-\\uFB06\\uFB13-\\uFB17\\uFB1D\\uFB1F-\\uFB28\\uFB2A-\\uFB36\\uFB38-\\uFB3C\\uFB3E\\uFB40\\uFB41\\uFB43\\uFB44\\uFB46-\\uFBB1\\uFBD3-\\uFD3D\\uFD50-\\uFD8F\\uFD92-\\uFDC7\\uFDF0-\\uFDFB\\uFE70-\\uFE74\\uFE76-\\uFEFC\\uFF21-\\uFF3A\\uFF41-\\uFF5A\\uFF66-\\uFFBE\\uFFC2-\\uFFC7\\uFFCA-\\uFFCF\\uFFD2-\\uFFD7\\uFFDA-\\uFFDC]"),
-        RegexNonAsciiIdentifierPart = new RegExp("[\\xAA\\xB5\\xBA\\xC0-\\xD6\\xD8-\\xF6\\xF8-\\u02C1\\u02C6-\\u02D1\\u02E0-\\u02E4\\u02EC\\u02EE\\u0300-\\u0374\\u0376\\u0377\\u037A-\\u037D\\u037F\\u0386\\u0388-\\u038A\\u038C\\u038E-\\u03A1\\u03A3-\\u03F5\\u03F7-\\u0481\\u0483-\\u0487\\u048A-\\u052F\\u0531-\\u0556\\u0559\\u0561-\\u0587\\u0591-\\u05BD\\u05BF\\u05C1\\u05C2\\u05C4\\u05C5\\u05C7\\u05D0-\\u05EA\\u05F0-\\u05F2\\u0610-\\u061A\\u0620-\\u0669\\u066E-\\u06D3\\u06D5-\\u06DC\\u06DF-\\u06E8\\u06EA-\\u06FC\\u06FF\\u0710-\\u074A\\u074D-\\u07B1\\u07C0-\\u07F5\\u07FA\\u0800-\\u082D\\u0840-\\u085B\\u08A0-\\u08B2\\u08E4-\\u0963\\u0966-\\u096F\\u0971-\\u0983\\u0985-\\u098C\\u098F\\u0990\\u0993-\\u09A8\\u09AA-\\u09B0\\u09B2\\u09B6-\\u09B9\\u09BC-\\u09C4\\u09C7\\u09C8\\u09CB-\\u09CE\\u09D7\\u09DC\\u09DD\\u09DF-\\u09E3\\u09E6-\\u09F1\\u0A01-\\u0A03\\u0A05-\\u0A0A\\u0A0F\\u0A10\\u0A13-\\u0A28\\u0A2A-\\u0A30\\u0A32\\u0A33\\u0A35\\u0A36\\u0A38\\u0A39\\u0A3C\\u0A3E-\\u0A42\\u0A47\\u0A48\\u0A4B-\\u0A4D\\u0A51\\u0A59-\\u0A5C\\u0A5E\\u0A66-\\u0A75\\u0A81-\\u0A83\\u0A85-\\u0A8D\\u0A8F-\\u0A91\\u0A93-\\u0AA8\\u0AAA-\\u0AB0\\u0AB2\\u0AB3\\u0AB5-\\u0AB9\\u0ABC-\\u0AC5\\u0AC7-\\u0AC9\\u0ACB-\\u0ACD\\u0AD0\\u0AE0-\\u0AE3\\u0AE6-\\u0AEF\\u0B01-\\u0B03\\u0B05-\\u0B0C\\u0B0F\\u0B10\\u0B13-\\u0B28\\u0B2A-\\u0B30\\u0B32\\u0B33\\u0B35-\\u0B39\\u0B3C-\\u0B44\\u0B47\\u0B48\\u0B4B-\\u0B4D\\u0B56\\u0B57\\u0B5C\\u0B5D\\u0B5F-\\u0B63\\u0B66-\\u0B6F\\u0B71\\u0B82\\u0B83\\u0B85-\\u0B8A\\u0B8E-\\u0B90\\u0B92-\\u0B95\\u0B99\\u0B9A\\u0B9C\\u0B9E\\u0B9F\\u0BA3\\u0BA4\\u0BA8-\\u0BAA\\u0BAE-\\u0BB9\\u0BBE-\\u0BC2\\u0BC6-\\u0BC8\\u0BCA-\\u0BCD\\u0BD0\\u0BD7\\u0BE6-\\u0BEF\\u0C00-\\u0C03\\u0C05-\\u0C0C\\u0C0E-\\u0C10\\u0C12-\\u0C28\\u0C2A-\\u0C39\\u0C3D-\\u0C44\\u0C46-\\u0C48\\u0C4A-\\u0C4D\\u0C55\\u0C56\\u0C58\\u0C59\\u0C60-\\u0C63\\u0C66-\\u0C6F\\u0C81-\\u0C83\\u0C85-\\u0C8C\\u0C8E-\\u0C90\\u0C92-\\u0CA8\\u0CAA-\\u0CB3\\u0CB5-\\u0CB9\\u0CBC-\\u0CC4\\u0CC6-\\u0CC8\\u0CCA-\\u0CCD\\u0CD5\\u0CD6\\u0CDE\\u0CE0-\\u0CE3\\u0CE6-\\u0CEF\\u0CF1\\u0CF2\\u0D01-\\u0D03\\u0D05-\\u0D0C\\u0D0E-\\u0D10\\u0D12-\\u0D3A\\u0D3D-\\u0D44\\u0D46-\\u0D48\\u0D4A-\\u0D4E\\u0D57\\u0D60-\\u0D63\\u0D66-\\u0D6F\\u0D7A-\\u0D7F\\u0D82\\u0D83\\u0D85-\\u0D96\\u0D9A-\\u0DB1\\u0DB3-\\u0DBB\\u0DBD\\u0DC0-\\u0DC6\\u0DCA\\u0DCF-\\u0DD4\\u0DD6\\u0DD8-\\u0DDF\\u0DE6-\\u0DEF\\u0DF2\\u0DF3\\u0E01-\\u0E3A\\u0E40-\\u0E4E\\u0E50-\\u0E59\\u0E81\\u0E82\\u0E84\\u0E87\\u0E88\\u0E8A\\u0E8D\\u0E94-\\u0E97\\u0E99-\\u0E9F\\u0EA1-\\u0EA3\\u0EA5\\u0EA7\\u0EAA\\u0EAB\\u0EAD-\\u0EB9\\u0EBB-\\u0EBD\\u0EC0-\\u0EC4\\u0EC6\\u0EC8-\\u0ECD\\u0ED0-\\u0ED9\\u0EDC-\\u0EDF\\u0F00\\u0F18\\u0F19\\u0F20-\\u0F29\\u0F35\\u0F37\\u0F39\\u0F3E-\\u0F47\\u0F49-\\u0F6C\\u0F71-\\u0F84\\u0F86-\\u0F97\\u0F99-\\u0FBC\\u0FC6\\u1000-\\u1049\\u1050-\\u109D\\u10A0-\\u10C5\\u10C7\\u10CD\\u10D0-\\u10FA\\u10FC-\\u1248\\u124A-\\u124D\\u1250-\\u1256\\u1258\\u125A-\\u125D\\u1260-\\u1288\\u128A-\\u128D\\u1290-\\u12B0\\u12B2-\\u12B5\\u12B8-\\u12BE\\u12C0\\u12C2-\\u12C5\\u12C8-\\u12D6\\u12D8-\\u1310\\u1312-\\u1315\\u1318-\\u135A\\u135D-\\u135F\\u1380-\\u138F\\u13A0-\\u13F4\\u1401-\\u166C\\u166F-\\u167F\\u1681-\\u169A\\u16A0-\\u16EA\\u16EE-\\u16F8\\u1700-\\u170C\\u170E-\\u1714\\u1720-\\u1734\\u1740-\\u1753\\u1760-\\u176C\\u176E-\\u1770\\u1772\\u1773\\u1780-\\u17D3\\u17D7\\u17DC\\u17DD\\u17E0-\\u17E9\\u180B-\\u180D\\u1810-\\u1819\\u1820-\\u1877\\u1880-\\u18AA\\u18B0-\\u18F5\\u1900-\\u191E\\u1920-\\u192B\\u1930-\\u193B\\u1946-\\u196D\\u1970-\\u1974\\u1980-\\u19AB\\u19B0-\\u19C9\\u19D0-\\u19D9\\u1A00-\\u1A1B\\u1A20-\\u1A5E\\u1A60-\\u1A7C\\u1A7F-\\u1A89\\u1A90-\\u1A99\\u1AA7\\u1AB0-\\u1ABD\\u1B00-\\u1B4B\\u1B50-\\u1B59\\u1B6B-\\u1B73\\u1B80-\\u1BF3\\u1C00-\\u1C37\\u1C40-\\u1C49\\u1C4D-\\u1C7D\\u1CD0-\\u1CD2\\u1CD4-\\u1CF6\\u1CF8\\u1CF9\\u1D00-\\u1DF5\\u1DFC-\\u1F15\\u1F18-\\u1F1D\\u1F20-\\u1F45\\u1F48-\\u1F4D\\u1F50-\\u1F57\\u1F59\\u1F5B\\u1F5D\\u1F5F-\\u1F7D\\u1F80-\\u1FB4\\u1FB6-\\u1FBC\\u1FBE\\u1FC2-\\u1FC4\\u1FC6-\\u1FCC\\u1FD0-\\u1FD3\\u1FD6-\\u1FDB\\u1FE0-\\u1FEC\\u1FF2-\\u1FF4\\u1FF6-\\u1FFC\\u200C\\u200D\\u203F\\u2040\\u2054\\u2071\\u207F\\u2090-\\u209C\\u20D0-\\u20DC\\u20E1\\u20E5-\\u20F0\\u2102\\u2107\\u210A-\\u2113\\u2115\\u2119-\\u211D\\u2124\\u2126\\u2128\\u212A-\\u212D\\u212F-\\u2139\\u213C-\\u213F\\u2145-\\u2149\\u214E\\u2160-\\u2188\\u2C00-\\u2C2E\\u2C30-\\u2C5E\\u2C60-\\u2CE4\\u2CEB-\\u2CF3\\u2D00-\\u2D25\\u2D27\\u2D2D\\u2D30-\\u2D67\\u2D6F\\u2D7F-\\u2D96\\u2DA0-\\u2DA6\\u2DA8-\\u2DAE\\u2DB0-\\u2DB6\\u2DB8-\\u2DBE\\u2DC0-\\u2DC6\\u2DC8-\\u2DCE\\u2DD0-\\u2DD6\\u2DD8-\\u2DDE\\u2DE0-\\u2DFF\\u2E2F\\u3005-\\u3007\\u3021-\\u302F\\u3031-\\u3035\\u3038-\\u303C\\u3041-\\u3096\\u3099\\u309A\\u309D-\\u309F\\u30A1-\\u30FA\\u30FC-\\u30FF\\u3105-\\u312D\\u3131-\\u318E\\u31A0-\\u31BA\\u31F0-\\u31FF\\u3400-\\u4DB5\\u4E00-\\u9FCC\\uA000-\\uA48C\\uA4D0-\\uA4FD\\uA500-\\uA60C\\uA610-\\uA62B\\uA640-\\uA66F\\uA674-\\uA67D\\uA67F-\\uA69D\\uA69F-\\uA6F1\\uA717-\\uA71F\\uA722-\\uA788\\uA78B-\\uA78E\\uA790-\\uA7AD\\uA7B0\\uA7B1\\uA7F7-\\uA827\\uA840-\\uA873\\uA880-\\uA8C4\\uA8D0-\\uA8D9\\uA8E0-\\uA8F7\\uA8FB\\uA900-\\uA92D\\uA930-\\uA953\\uA960-\\uA97C\\uA980-\\uA9C0\\uA9CF-\\uA9D9\\uA9E0-\\uA9FE\\uAA00-\\uAA36\\uAA40-\\uAA4D\\uAA50-\\uAA59\\uAA60-\\uAA76\\uAA7A-\\uAAC2\\uAADB-\\uAADD\\uAAE0-\\uAAEF\\uAAF2-\\uAAF6\\uAB01-\\uAB06\\uAB09-\\uAB0E\\uAB11-\\uAB16\\uAB20-\\uAB26\\uAB28-\\uAB2E\\uAB30-\\uAB5A\\uAB5C-\\uAB5F\\uAB64\\uAB65\\uABC0-\\uABEA\\uABEC\\uABED\\uABF0-\\uABF9\\uAC00-\\uD7A3\\uD7B0-\\uD7C6\\uD7CB-\\uD7FB\\uF900-\\uFA6D\\uFA70-\\uFAD9\\uFB00-\\uFB06\\uFB13-\\uFB17\\uFB1D-\\uFB28\\uFB2A-\\uFB36\\uFB38-\\uFB3C\\uFB3E\\uFB40\\uFB41\\uFB43\\uFB44\\uFB46-\\uFBB1\\uFBD3-\\uFD3D\\uFD50-\\uFD8F\\uFD92-\\uFDC7\\uFDF0-\\uFDFB\\uFE00-\\uFE0F\\uFE20-\\uFE2D\\uFE33\\uFE34\\uFE4D-\\uFE4F\\uFE70-\\uFE74\\uFE76-\\uFEFC\\uFF10-\\uFF19\\uFF21-\\uFF3A\\uFF3F\\uFF41-\\uFF5A\\uFF66-\\uFFBE\\uFFC2-\\uFFC7\\uFFCA-\\uFFCF\\uFFD2-\\uFFD7\\uFFDA-\\uFFDC]");
-
-  // Ensure the condition is true, otherwise throw an error.
-  // This is only to have a better contract semantic, i.e. another safety net
-  // to catch a logic error. The condition shall be fulfilled in normal case.
-  // Do NOT use this to enforce a certain condition on any user input.
-
-  function assert(condition, message) {
-    /* istanbul ignore next */
-    if (!condition) {
-      throw new Error('ASSERT: ' + message);
-    }
-  }
-
-  function isDecimalDigit(ch) {
-    return (ch >= 0x30 && ch <= 0x39); // 0..9
-  }
-
-  function isHexDigit(ch) {
-    return '0123456789abcdefABCDEF'.indexOf(ch) >= 0;
-  }
-
-  function isOctalDigit(ch) {
-    return '01234567'.indexOf(ch) >= 0;
-  }
-
-  // 7.2 White Space
-
-  function isWhiteSpace(ch) {
-    return (ch === 0x20) || (ch === 0x09) || (ch === 0x0B) || (ch === 0x0C) || (ch === 0xA0) ||
-      (ch >= 0x1680 && [0x1680, 0x180E, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200A, 0x202F, 0x205F, 0x3000, 0xFEFF].indexOf(ch) >= 0);
-  }
-
-  // 7.3 Line Terminators
-
-  function isLineTerminator(ch) {
-    return (ch === 0x0A) || (ch === 0x0D) || (ch === 0x2028) || (ch === 0x2029);
-  }
-
-  // 7.6 Identifier Names and Identifiers
-
-  function isIdentifierStart(ch) {
-    return (ch === 0x24) || (ch === 0x5F) || // $ (dollar) and _ (underscore)
-      (ch >= 0x41 && ch <= 0x5A) || // A..Z
-      (ch >= 0x61 && ch <= 0x7A) || // a..z
-      (ch === 0x5C) || // \ (backslash)
-      ((ch >= 0x80) && RegexNonAsciiIdentifierStart.test(String.fromCharCode(ch)));
-  }
-
-  function isIdentifierPart(ch) {
-    return (ch === 0x24) || (ch === 0x5F) || // $ (dollar) and _ (underscore)
-      (ch >= 0x41 && ch <= 0x5A) || // A..Z
-      (ch >= 0x61 && ch <= 0x7A) || // a..z
-      (ch >= 0x30 && ch <= 0x39) || // 0..9
-      (ch === 0x5C) || // \ (backslash)
-      ((ch >= 0x80) && RegexNonAsciiIdentifierPart.test(String.fromCharCode(ch)));
-  }
-
-  // 7.6.1.1 Keywords
-
-  var keywords = {
-    'if':1, 'in':1, 'do':1,
-    'var':1, 'for':1, 'new':1, 'try':1, 'let':1,
-    'this':1, 'else':1, 'case':1, 'void':1, 'with':1, 'enum':1,
-    'while':1, 'break':1, 'catch':1, 'throw':1, 'const':1, 'yield':1, 'class':1, 'super':1,
-    'return':1, 'typeof':1, 'delete':1, 'switch':1, 'export':1, 'import':1, 'public':1, 'static':1,
-    'default':1, 'finally':1, 'extends':1, 'package':1, 'private':1,
-    'function':1, 'continue':1, 'debugger':1,
-    'interface':1, 'protected':1,
-    'instanceof':1, 'implements':1
-  };
-
-  function skipComment() {
-    var ch;
-
-    while (index$1 < length) {
-      ch = source$1.charCodeAt(index$1);
-
-      if (isWhiteSpace(ch) || isLineTerminator(ch)) {
-        ++index$1;
-      } else {
-        break;
-      }
-    }
-  }
-
-  function scanHexEscape(prefix) {
-    var i, len, ch, code = 0;
-
-    len = (prefix === 'u') ? 4 : 2;
-    for (i = 0; i < len; ++i) {
-      if (index$1 < length && isHexDigit(source$1[index$1])) {
-        ch = source$1[index$1++];
-        code = code * 16 + '0123456789abcdef'.indexOf(ch.toLowerCase());
-      } else {
-        throwError({}, MessageUnexpectedToken, ILLEGAL);
-      }
-    }
-    return String.fromCharCode(code);
-  }
-
-  function scanUnicodeCodePointEscape() {
-    var ch, code, cu1, cu2;
-
-    ch = source$1[index$1];
-    code = 0;
-
-    // At least, one hex digit is required.
-    if (ch === '}') {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    while (index$1 < length) {
-      ch = source$1[index$1++];
-      if (!isHexDigit(ch)) {
-        break;
-      }
-      code = code * 16 + '0123456789abcdef'.indexOf(ch.toLowerCase());
-    }
-
-    if (code > 0x10FFFF || ch !== '}') {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    // UTF-16 Encoding
-    if (code <= 0xFFFF) {
-      return String.fromCharCode(code);
-    }
-    cu1 = ((code - 0x10000) >> 10) + 0xD800;
-    cu2 = ((code - 0x10000) & 1023) + 0xDC00;
-    return String.fromCharCode(cu1, cu2);
-  }
-
-  function getEscapedIdentifier() {
-    var ch, id;
-
-    ch = source$1.charCodeAt(index$1++);
-    id = String.fromCharCode(ch);
-
-    // '\u' (U+005C, U+0075) denotes an escaped character.
-    if (ch === 0x5C) {
-      if (source$1.charCodeAt(index$1) !== 0x75) {
-        throwError({}, MessageUnexpectedToken, ILLEGAL);
-      }
-      ++index$1;
-      ch = scanHexEscape('u');
-      if (!ch || ch === '\\' || !isIdentifierStart(ch.charCodeAt(0))) {
-        throwError({}, MessageUnexpectedToken, ILLEGAL);
-      }
-      id = ch;
-    }
-
-    while (index$1 < length) {
-      ch = source$1.charCodeAt(index$1);
-      if (!isIdentifierPart(ch)) {
-        break;
-      }
-      ++index$1;
-      id += String.fromCharCode(ch);
-
-      // '\u' (U+005C, U+0075) denotes an escaped character.
-      if (ch === 0x5C) {
-        id = id.substr(0, id.length - 1);
-        if (source$1.charCodeAt(index$1) !== 0x75) {
-          throwError({}, MessageUnexpectedToken, ILLEGAL);
-        }
-        ++index$1;
-        ch = scanHexEscape('u');
-        if (!ch || ch === '\\' || !isIdentifierPart(ch.charCodeAt(0))) {
-          throwError({}, MessageUnexpectedToken, ILLEGAL);
-        }
-        id += ch;
-      }
-    }
-
-    return id;
-  }
-
-  function getIdentifier() {
-    var start, ch;
-
-    start = index$1++;
-    while (index$1 < length) {
-      ch = source$1.charCodeAt(index$1);
-      if (ch === 0x5C) {
-        // Blackslash (U+005C) marks Unicode escape sequence.
-        index$1 = start;
-        return getEscapedIdentifier();
-      }
-      if (isIdentifierPart(ch)) {
-        ++index$1;
-      } else {
-        break;
-      }
-    }
-
-    return source$1.slice(start, index$1);
-  }
-
-  function scanIdentifier() {
-    var start, id, type;
-
-    start = index$1;
-
-    // Backslash (U+005C) starts an escaped character.
-    id = (source$1.charCodeAt(index$1) === 0x5C) ? getEscapedIdentifier() : getIdentifier();
-
-    // There is no keyword or literal with only one character.
-    // Thus, it must be an identifier.
-    if (id.length === 1) {
-      type = TokenIdentifier;
-    } else if (keywords.hasOwnProperty(id)) {
-      type = TokenKeyword;
-    } else if (id === 'null') {
-      type = TokenNullLiteral;
-    } else if (id === 'true' || id === 'false') {
-      type = TokenBooleanLiteral;
-    } else {
-      type = TokenIdentifier;
-    }
-
-    return {
-      type: type,
-      value: id,
-      start: start,
-      end: index$1
-    };
-  }
-
-  // 7.7 Punctuators
-
-  function scanPunctuator() {
-    var start = index$1,
-      code = source$1.charCodeAt(index$1),
-      code2,
-      ch1 = source$1[index$1],
-      ch2,
-      ch3,
-      ch4;
-
-    switch (code) {
-
-      // Check for most common single-character punctuators.
-      case 0x2E: // . dot
-      case 0x28: // ( open bracket
-      case 0x29: // ) close bracket
-      case 0x3B: // ; semicolon
-      case 0x2C: // , comma
-      case 0x7B: // { open curly brace
-      case 0x7D: // } close curly brace
-      case 0x5B: // [
-      case 0x5D: // ]
-      case 0x3A: // :
-      case 0x3F: // ?
-      case 0x7E: // ~
-        ++index$1;
-        return {
-          type: TokenPunctuator,
-          value: String.fromCharCode(code),
-          start: start,
-          end: index$1
-        };
-
-      default:
-        code2 = source$1.charCodeAt(index$1 + 1);
-
-        // '=' (U+003D) marks an assignment or comparison operator.
-        if (code2 === 0x3D) {
-          switch (code) {
-            case 0x2B: // +
-            case 0x2D: // -
-            case 0x2F: // /
-            case 0x3C: // <
-            case 0x3E: // >
-            case 0x5E: // ^
-            case 0x7C: // |
-            case 0x25: // %
-            case 0x26: // &
-            case 0x2A: // *
-              index$1 += 2;
-              return {
-                type: TokenPunctuator,
-                value: String.fromCharCode(code) + String.fromCharCode(code2),
-                start: start,
-                end: index$1
-              };
-
-            case 0x21: // !
-            case 0x3D: // =
-              index$1 += 2;
-
-              // !== and ===
-              if (source$1.charCodeAt(index$1) === 0x3D) {
-                ++index$1;
-              }
-              return {
-                type: TokenPunctuator,
-                value: source$1.slice(start, index$1),
-                start: start,
-                end: index$1
-              };
-          }
-        }
-    }
-
-    // 4-character punctuator: >>>=
-
-    ch4 = source$1.substr(index$1, 4);
-
-    if (ch4 === '>>>=') {
-      index$1 += 4;
-      return {
-        type: TokenPunctuator,
-        value: ch4,
-        start: start,
-        end: index$1
-      };
-    }
-
-    // 3-character punctuators: === !== >>> <<= >>=
-
-    ch3 = ch4.substr(0, 3);
-
-    if (ch3 === '>>>' || ch3 === '<<=' || ch3 === '>>=') {
-      index$1 += 3;
-      return {
-        type: TokenPunctuator,
-        value: ch3,
-        start: start,
-        end: index$1
-      };
-    }
-
-    // Other 2-character punctuators: ++ -- << >> && ||
-    ch2 = ch3.substr(0, 2);
-
-    if ((ch1 === ch2[1] && ('+-<>&|'.indexOf(ch1) >= 0)) || ch2 === '=>') {
-      index$1 += 2;
-      return {
-        type: TokenPunctuator,
-        value: ch2,
-        start: start,
-        end: index$1
-      };
-    }
-
-    // 1-character punctuators: < > = ! + - * % & | ^ /
-
-    if ('<>=!+-*%&|^/'.indexOf(ch1) >= 0) {
-      ++index$1;
-      return {
-        type: TokenPunctuator,
-        value: ch1,
-        start: start,
-        end: index$1
-      };
-    }
-
-    throwError({}, MessageUnexpectedToken, ILLEGAL);
-  }
-
-  // 7.8.3 Numeric Literals
-
-  function scanHexLiteral(start) {
-    var number = '';
-
-    while (index$1 < length) {
-      if (!isHexDigit(source$1[index$1])) {
-        break;
-      }
-      number += source$1[index$1++];
-    }
-
-    if (number.length === 0) {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    if (isIdentifierStart(source$1.charCodeAt(index$1))) {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    return {
-      type: TokenNumericLiteral,
-      value: parseInt('0x' + number, 16),
-      start: start,
-      end: index$1
-    };
-  }
-
-  function scanOctalLiteral(start) {
-    var number = '0' + source$1[index$1++];
-    while (index$1 < length) {
-      if (!isOctalDigit(source$1[index$1])) {
-        break;
-      }
-      number += source$1[index$1++];
-    }
-
-    if (isIdentifierStart(source$1.charCodeAt(index$1)) || isDecimalDigit(source$1.charCodeAt(index$1))) {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    return {
-      type: TokenNumericLiteral,
-      value: parseInt(number, 8),
-      octal: true,
-      start: start,
-      end: index$1
-    };
-  }
-
-  function scanNumericLiteral() {
-    var number, start, ch;
-
-    ch = source$1[index$1];
-    assert(isDecimalDigit(ch.charCodeAt(0)) || (ch === '.'),
-      'Numeric literal must start with a decimal digit or a decimal point');
-
-    start = index$1;
-    number = '';
-    if (ch !== '.') {
-      number = source$1[index$1++];
-      ch = source$1[index$1];
-
-      // Hex number starts with '0x'.
-      // Octal number starts with '0'.
-      if (number === '0') {
-        if (ch === 'x' || ch === 'X') {
-          ++index$1;
-          return scanHexLiteral(start);
-        }
-        if (isOctalDigit(ch)) {
-          return scanOctalLiteral(start);
-        }
-
-        // decimal number starts with '0' such as '09' is illegal.
-        if (ch && isDecimalDigit(ch.charCodeAt(0))) {
-          throwError({}, MessageUnexpectedToken, ILLEGAL);
-        }
-      }
-
-      while (isDecimalDigit(source$1.charCodeAt(index$1))) {
-        number += source$1[index$1++];
-      }
-      ch = source$1[index$1];
-    }
-
-    if (ch === '.') {
-      number += source$1[index$1++];
-      while (isDecimalDigit(source$1.charCodeAt(index$1))) {
-        number += source$1[index$1++];
-      }
-      ch = source$1[index$1];
-    }
-
-    if (ch === 'e' || ch === 'E') {
-      number += source$1[index$1++];
-
-      ch = source$1[index$1];
-      if (ch === '+' || ch === '-') {
-        number += source$1[index$1++];
-      }
-      if (isDecimalDigit(source$1.charCodeAt(index$1))) {
-        while (isDecimalDigit(source$1.charCodeAt(index$1))) {
-          number += source$1[index$1++];
-        }
-      } else {
-        throwError({}, MessageUnexpectedToken, ILLEGAL);
-      }
-    }
-
-    if (isIdentifierStart(source$1.charCodeAt(index$1))) {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    return {
-      type: TokenNumericLiteral,
-      value: parseFloat(number),
-      start: start,
-      end: index$1
-    };
-  }
-
-  // 7.8.4 String Literals
-
-  function scanStringLiteral() {
-    var str = '',
-      quote, start, ch, code, octal = false;
-
-    quote = source$1[index$1];
-    assert((quote === '\'' || quote === '"'),
-      'String literal must starts with a quote');
-
-    start = index$1;
-    ++index$1;
-
-    while (index$1 < length) {
-      ch = source$1[index$1++];
-
-      if (ch === quote) {
-        quote = '';
-        break;
-      } else if (ch === '\\') {
-        ch = source$1[index$1++];
-        if (!ch || !isLineTerminator(ch.charCodeAt(0))) {
-          switch (ch) {
-            case 'u':
-            case 'x':
-              if (source$1[index$1] === '{') {
-                ++index$1;
-                str += scanUnicodeCodePointEscape();
-              } else {
-                str += scanHexEscape(ch);
-              }
-              break;
-            case 'n':
-              str += '\n';
-              break;
-            case 'r':
-              str += '\r';
-              break;
-            case 't':
-              str += '\t';
-              break;
-            case 'b':
-              str += '\b';
-              break;
-            case 'f':
-              str += '\f';
-              break;
-            case 'v':
-              str += '\x0B';
-              break;
-
-            default:
-              if (isOctalDigit(ch)) {
-                code = '01234567'.indexOf(ch);
-
-                // \0 is not octal escape sequence
-                if (code !== 0) {
-                  octal = true;
-                }
-
-                if (index$1 < length && isOctalDigit(source$1[index$1])) {
-                  octal = true;
-                  code = code * 8 + '01234567'.indexOf(source$1[index$1++]);
-
-                  // 3 digits are only allowed when string starts
-                  // with 0, 1, 2, 3
-                  if ('0123'.indexOf(ch) >= 0 &&
-                    index$1 < length &&
-                    isOctalDigit(source$1[index$1])) {
-                    code = code * 8 + '01234567'.indexOf(source$1[index$1++]);
-                  }
-                }
-                str += String.fromCharCode(code);
-              } else {
-                str += ch;
-              }
-              break;
-          }
-        } else {
-          if (ch === '\r' && source$1[index$1] === '\n') {
-            ++index$1;
-          }
-        }
-      } else if (isLineTerminator(ch.charCodeAt(0))) {
-        break;
-      } else {
-        str += ch;
-      }
-    }
-
-    if (quote !== '') {
-      throwError({}, MessageUnexpectedToken, ILLEGAL);
-    }
-
-    return {
-      type: TokenStringLiteral,
-      value: str,
-      octal: octal,
-      start: start,
-      end: index$1
-    };
-  }
-
-  function testRegExp(pattern, flags) {
-    var tmp = pattern;
-
-    if (flags.indexOf('u') >= 0) {
-      // Replace each astral symbol and every Unicode code point
-      // escape sequence with a single ASCII symbol to avoid throwing on
-      // regular expressions that are only valid in combination with the
-      // `/u` flag.
-      // Note: replacing with the ASCII symbol `x` might cause false
-      // negatives in unlikely scenarios. For example, `[\u{61}-b]` is a
-      // perfectly valid pattern that is equivalent to `[a-b]`, but it
-      // would be replaced by `[x-b]` which throws an error.
-      tmp = tmp
-        .replace(/\\u\{([0-9a-fA-F]+)\}/g, function($0, $1) {
-          if (parseInt($1, 16) <= 0x10FFFF) {
-            return 'x';
-          }
-          throwError({}, MessageInvalidRegExp);
-        })
-        .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, 'x');
-    }
-
-    // First, detect invalid regular expressions.
-    try {
-      new RegExp(tmp);
-    } catch (e) {
-      throwError({}, MessageInvalidRegExp);
-    }
-
-    // Return a regular expression object for this pattern-flag pair, or
-    // `null` in case the current environment doesn't support the flags it
-    // uses.
-    try {
-      return new RegExp(pattern, flags);
-    } catch (exception) {
-      return null;
-    }
-  }
-
-  function scanRegExpBody() {
-    var ch, str, classMarker, terminated, body;
-
-    ch = source$1[index$1];
-    assert(ch === '/', 'Regular expression literal must start with a slash');
-    str = source$1[index$1++];
-
-    classMarker = false;
-    terminated = false;
-    while (index$1 < length) {
-      ch = source$1[index$1++];
-      str += ch;
-      if (ch === '\\') {
-        ch = source$1[index$1++];
-        // ECMA-262 7.8.5
-        if (isLineTerminator(ch.charCodeAt(0))) {
-          throwError({}, MessageUnterminatedRegExp);
-        }
-        str += ch;
-      } else if (isLineTerminator(ch.charCodeAt(0))) {
-        throwError({}, MessageUnterminatedRegExp);
-      } else if (classMarker) {
-        if (ch === ']') {
-          classMarker = false;
-        }
-      } else {
-        if (ch === '/') {
-          terminated = true;
-          break;
-        } else if (ch === '[') {
-          classMarker = true;
-        }
-      }
-    }
-
-    if (!terminated) {
-      throwError({}, MessageUnterminatedRegExp);
-    }
-
-    // Exclude leading and trailing slash.
-    body = str.substr(1, str.length - 2);
-    return {
-      value: body,
-      literal: str
-    };
-  }
-
-  function scanRegExpFlags() {
-    var ch, str, flags;
-
-    str = '';
-    flags = '';
-    while (index$1 < length) {
-      ch = source$1[index$1];
-      if (!isIdentifierPart(ch.charCodeAt(0))) {
-        break;
-      }
-
-      ++index$1;
-      if (ch === '\\' && index$1 < length) {
-        throwError({}, MessageUnexpectedToken, ILLEGAL);
-      } else {
-        flags += ch;
-        str += ch;
-      }
-    }
-
-    if (flags.search(/[^gimuy]/g) >= 0) {
-      throwError({}, MessageInvalidRegExp, flags);
-    }
-
-    return {
-      value: flags,
-      literal: str
-    };
-  }
-
-  function scanRegExp() {
-    var start, body, flags, value;
-
-    lookahead = null;
-    skipComment();
-    start = index$1;
-
-    body = scanRegExpBody();
-    flags = scanRegExpFlags();
-    value = testRegExp(body.value, flags.value);
-
-    return {
-      literal: body.literal + flags.literal,
-      value: value,
-      regex: {
-        pattern: body.value,
-        flags: flags.value
-      },
-      start: start,
-      end: index$1
-    };
-  }
-
-  function isIdentifierName(token) {
-    return token.type === TokenIdentifier ||
-      token.type === TokenKeyword ||
-      token.type === TokenBooleanLiteral ||
-      token.type === TokenNullLiteral;
-  }
-
-  function advance() {
-    var ch;
-
-    skipComment();
-
-    if (index$1 >= length) {
-      return {
-        type: TokenEOF,
-        start: index$1,
-        end: index$1
-      };
-    }
-
-    ch = source$1.charCodeAt(index$1);
-
-    if (isIdentifierStart(ch)) {
-      return scanIdentifier();
-    }
-
-    // Very common: ( and ) and ;
-    if (ch === 0x28 || ch === 0x29 || ch === 0x3B) {
-      return scanPunctuator();
-    }
-
-    // String literal starts with single quote (U+0027) or double quote (U+0022).
-    if (ch === 0x27 || ch === 0x22) {
-      return scanStringLiteral();
-    }
-
-
-    // Dot (.) U+002E can also start a floating-point number, hence the need
-    // to check the next character.
-    if (ch === 0x2E) {
-      if (isDecimalDigit(source$1.charCodeAt(index$1 + 1))) {
-        return scanNumericLiteral();
-      }
-      return scanPunctuator();
-    }
-
-    if (isDecimalDigit(ch)) {
-      return scanNumericLiteral();
-    }
-
-    return scanPunctuator();
-  }
-
-  function lex() {
-    var token;
-
-    token = lookahead;
-    index$1 = token.end;
-
-    lookahead = advance();
-
-    index$1 = token.end;
-
-    return token;
-  }
-
-  function peek$1() {
-    var pos;
-
-    pos = index$1;
-
-    lookahead = advance();
-    index$1 = pos;
-  }
-
-  function finishArrayExpression(elements) {
-    var node = new ASTNode(SyntaxArrayExpression);
-    node.elements = elements;
-    return node;
-  }
-
-  function finishBinaryExpression(operator, left, right) {
-    var node = new ASTNode((operator === '||' || operator === '&&') ? SyntaxLogicalExpression : SyntaxBinaryExpression);
-    node.operator = operator;
-    node.left = left;
-    node.right = right;
-    return node;
-  }
-
-  function finishCallExpression(callee, args) {
-    var node = new ASTNode(SyntaxCallExpression);
-    node.callee = callee;
-    node.arguments = args;
-    return node;
-  }
-
-  function finishConditionalExpression(test, consequent, alternate) {
-    var node = new ASTNode(SyntaxConditionalExpression);
-    node.test = test;
-    node.consequent = consequent;
-    node.alternate = alternate;
-    return node;
-  }
-
-  function finishIdentifier(name) {
-    var node = new ASTNode(SyntaxIdentifier);
-    node.name = name;
-    return node;
-  }
-
-  function finishLiteral(token) {
-    var node = new ASTNode(SyntaxLiteral);
-    node.value = token.value;
-    node.raw = source$1.slice(token.start, token.end);
-    if (token.regex) {
-      if (node.raw === '//') {
-        node.raw = '/(?:)/';
-      }
-      node.regex = token.regex;
-    }
-    return node;
-  }
-
-  function finishMemberExpression(accessor, object, property) {
-    var node = new ASTNode(SyntaxMemberExpression);
-    node.computed = accessor === '[';
-    node.object = object;
-    node.property = property;
-    if (!node.computed) property.member = true;
-    return node;
-  }
-
-  function finishObjectExpression(properties) {
-    var node = new ASTNode(SyntaxObjectExpression);
-    node.properties = properties;
-    return node;
-  }
-
-  function finishProperty(kind, key, value) {
-    var node = new ASTNode(SyntaxProperty);
-    node.key = key;
-    node.value = value;
-    node.kind = kind;
-    return node;
-  }
-
-  function finishUnaryExpression(operator, argument) {
-    var node = new ASTNode(SyntaxUnaryExpression);
-    node.operator = operator;
-    node.argument = argument;
-    node.prefix = true;
-    return node;
-  }
-
-  // Throw an exception
-
-  function throwError(token, messageFormat) {
-    var error,
-      args = Array.prototype.slice.call(arguments, 2),
-      msg = messageFormat.replace(
-        /%(\d)/g,
-        function(whole, index) {
-          assert(index < args.length, 'Message reference must be in range');
-          return args[index];
-        }
-      );
-
-
-    error = new Error(msg);
-    error.index = index$1;
-    error.description = msg;
-    throw error;
-  }
-
-  // Throw an exception because of the token.
-
-  function throwUnexpected(token) {
-    if (token.type === TokenEOF) {
-      throwError(token, MessageUnexpectedEOS);
-    }
-
-    if (token.type === TokenNumericLiteral) {
-      throwError(token, MessageUnexpectedNumber);
-    }
-
-    if (token.type === TokenStringLiteral) {
-      throwError(token, MessageUnexpectedString);
-    }
-
-    if (token.type === TokenIdentifier) {
-      throwError(token, MessageUnexpectedIdentifier);
-    }
-
-    if (token.type === TokenKeyword) {
-      throwError(token, MessageUnexpectedReserved);
-    }
-
-    // BooleanLiteral, NullLiteral, or Punctuator.
-    throwError(token, MessageUnexpectedToken, token.value);
-  }
-
-  // Expect the next token to match the specified punctuator.
-  // If not, an exception will be thrown.
-
-  function expect(value) {
-    var token = lex();
-    if (token.type !== TokenPunctuator || token.value !== value) {
-      throwUnexpected(token);
-    }
-  }
-
-  // Return true if the next token matches the specified punctuator.
-
-  function match(value) {
-    return lookahead.type === TokenPunctuator && lookahead.value === value;
-  }
-
-  // Return true if the next token matches the specified keyword
-
-  function matchKeyword(keyword) {
-    return lookahead.type === TokenKeyword && lookahead.value === keyword;
-  }
-
-  // 11.1.4 Array Initialiser
-
-  function parseArrayInitialiser() {
-    var elements = [];
-
-    index$1 = lookahead.start;
-    expect('[');
-
-    while (!match(']')) {
-      if (match(',')) {
-        lex();
-        elements.push(null);
-      } else {
-        elements.push(parseConditionalExpression());
-
-        if (!match(']')) {
-          expect(',');
-        }
-      }
-    }
-
-    lex();
-
-    return finishArrayExpression(elements);
-  }
-
-  // 11.1.5 Object Initialiser
-
-  function parseObjectPropertyKey() {
-    var token;
-
-    index$1 = lookahead.start;
-    token = lex();
-
-    // Note: This function is called only from parseObjectProperty(), where
-    // EOF and Punctuator tokens are already filtered out.
-
-    if (token.type === TokenStringLiteral || token.type === TokenNumericLiteral) {
-      if (token.octal) {
-        throwError(token, MessageStrictOctalLiteral);
-      }
-      return finishLiteral(token);
-    }
-
-    return finishIdentifier(token.value);
-  }
-
-  function parseObjectProperty() {
-    var token, key, id, value;
-
-    index$1 = lookahead.start;
-    token = lookahead;
-
-    if (token.type === TokenIdentifier) {
-      id = parseObjectPropertyKey();
-      expect(':');
-      value = parseConditionalExpression();
-      return finishProperty('init', id, value);
-    }
-    if (token.type === TokenEOF || token.type === TokenPunctuator) {
-      throwUnexpected(token);
-    } else {
-      key = parseObjectPropertyKey();
-      expect(':');
-      value = parseConditionalExpression();
-      return finishProperty('init', key, value);
-    }
-  }
-
-  function parseObjectInitialiser() {
-    var properties = [],
-      property, name, key, map = {},
-      toString = String;
-
-    index$1 = lookahead.start;
-    expect('{');
-
-    while (!match('}')) {
-      property = parseObjectProperty();
-
-      if (property.key.type === SyntaxIdentifier) {
-        name = property.key.name;
-      } else {
-        name = toString(property.key.value);
-      }
-
-      key = '$' + name;
-      if (Object.prototype.hasOwnProperty.call(map, key)) {
-        throwError({}, MessageStrictDuplicateProperty);
-      } else {
-        map[key] = true;
-      }
-
-      properties.push(property);
-
-      if (!match('}')) {
-        expect(',');
-      }
-    }
-
-    expect('}');
-
-    return finishObjectExpression(properties);
-  }
-
-  // 11.1.6 The Grouping Operator
-
-  function parseGroupExpression() {
-    var expr;
-
-    expect('(');
-
-    expr = parseExpression();
-
-    expect(')');
-
-    return expr;
-  }
-
-
-  // 11.1 Primary Expressions
-
-  var legalKeywords = {
-    "if": 1,
-    "this": 1
-  };
-
-  function parsePrimaryExpression() {
-    var type, token, expr;
-
-    if (match('(')) {
-      return parseGroupExpression();
-    }
-
-    if (match('[')) {
-      return parseArrayInitialiser();
-    }
-
-    if (match('{')) {
-      return parseObjectInitialiser();
-    }
-
-    type = lookahead.type;
-    index$1 = lookahead.start;
-
-
-    if (type === TokenIdentifier || legalKeywords[lookahead.value]) {
-      expr = finishIdentifier(lex().value);
-    } else if (type === TokenStringLiteral || type === TokenNumericLiteral) {
-      if (lookahead.octal) {
-        throwError(lookahead, MessageStrictOctalLiteral);
-      }
-      expr = finishLiteral(lex());
-    } else if (type === TokenKeyword) {
-      throw new Error(DISABLED);
-    } else if (type === TokenBooleanLiteral) {
-      token = lex();
-      token.value = (token.value === 'true');
-      expr = finishLiteral(token);
-    } else if (type === TokenNullLiteral) {
-      token = lex();
-      token.value = null;
-      expr = finishLiteral(token);
-    } else if (match('/') || match('/=')) {
-      expr = finishLiteral(scanRegExp());
-      peek$1();
-    } else {
-      throwUnexpected(lex());
-    }
-
-    return expr;
-  }
-
-  // 11.2 Left-Hand-Side Expressions
-
-  function parseArguments() {
-    var args = [];
-
-    expect('(');
-
-    if (!match(')')) {
-      while (index$1 < length) {
-        args.push(parseConditionalExpression());
-        if (match(')')) {
-          break;
-        }
-        expect(',');
-      }
-    }
-
-    expect(')');
-
-    return args;
-  }
-
-  function parseNonComputedProperty() {
-    var token;
-    index$1 = lookahead.start;
-    token = lex();
-
-    if (!isIdentifierName(token)) {
-      throwUnexpected(token);
-    }
-
-    return finishIdentifier(token.value);
-  }
-
-  function parseNonComputedMember() {
-    expect('.');
-
-    return parseNonComputedProperty();
-  }
-
-  function parseComputedMember() {
-    var expr;
-
-    expect('[');
-
-    expr = parseExpression();
-
-    expect(']');
-
-    return expr;
-  }
-
-  function parseLeftHandSideExpressionAllowCall() {
-    var expr, args, property;
-
-    expr = parsePrimaryExpression();
-
-    for (;;) {
-      if (match('.')) {
-        property = parseNonComputedMember();
-        expr = finishMemberExpression('.', expr, property);
-      } else if (match('(')) {
-        args = parseArguments();
-        expr = finishCallExpression(expr, args);
-      } else if (match('[')) {
-        property = parseComputedMember();
-        expr = finishMemberExpression('[', expr, property);
-      } else {
-        break;
-      }
-    }
-
-    return expr;
-  }
-
-  // 11.3 Postfix Expressions
-
-  function parsePostfixExpression() {
-    var expr = parseLeftHandSideExpressionAllowCall();
-
-    if (lookahead.type === TokenPunctuator) {
-      if ((match('++') || match('--'))) {
-        throw new Error(DISABLED);
-      }
-    }
-
-    return expr;
-  }
-
-  // 11.4 Unary Operators
-
-  function parseUnaryExpression() {
-    var token, expr;
-
-    if (lookahead.type !== TokenPunctuator && lookahead.type !== TokenKeyword) {
-      expr = parsePostfixExpression();
-    } else if (match('++') || match('--')) {
-      throw new Error(DISABLED);
-    } else if (match('+') || match('-') || match('~') || match('!')) {
-      token = lex();
-      expr = parseUnaryExpression();
-      expr = finishUnaryExpression(token.value, expr);
-    } else if (matchKeyword('delete') || matchKeyword('void') || matchKeyword('typeof')) {
-      throw new Error(DISABLED);
-    } else {
-      expr = parsePostfixExpression();
-    }
-
-    return expr;
-  }
-
-  function binaryPrecedence(token) {
-    var prec = 0;
-
-    if (token.type !== TokenPunctuator && token.type !== TokenKeyword) {
-      return 0;
-    }
-
-    switch (token.value) {
-      case '||':
-        prec = 1;
-        break;
-
-      case '&&':
-        prec = 2;
-        break;
-
-      case '|':
-        prec = 3;
-        break;
-
-      case '^':
-        prec = 4;
-        break;
-
-      case '&':
-        prec = 5;
-        break;
-
-      case '==':
-      case '!=':
-      case '===':
-      case '!==':
-        prec = 6;
-        break;
-
-      case '<':
-      case '>':
-      case '<=':
-      case '>=':
-      case 'instanceof':
-      case 'in':
-        prec = 7;
-        break;
-
-      case '<<':
-      case '>>':
-      case '>>>':
-        prec = 8;
-        break;
-
-      case '+':
-      case '-':
-        prec = 9;
-        break;
-
-      case '*':
-      case '/':
-      case '%':
-        prec = 11;
-        break;
-
-      default:
-        break;
-    }
-
-    return prec;
-  }
-
-  // 11.5 Multiplicative Operators
-  // 11.6 Additive Operators
-  // 11.7 Bitwise Shift Operators
-  // 11.8 Relational Operators
-  // 11.9 Equality Operators
-  // 11.10 Binary Bitwise Operators
-  // 11.11 Binary Logical Operators
-
-  function parseBinaryExpression() {
-    var marker, markers, expr, token, prec, stack, right, operator, left, i;
-
-    marker = lookahead;
-    left = parseUnaryExpression();
-
-    token = lookahead;
-    prec = binaryPrecedence(token);
-    if (prec === 0) {
-      return left;
-    }
-    token.prec = prec;
-    lex();
-
-    markers = [marker, lookahead];
-    right = parseUnaryExpression();
-
-    stack = [left, token, right];
-
-    while ((prec = binaryPrecedence(lookahead)) > 0) {
-
-      // Reduce: make a binary expression from the three topmost entries.
-      while ((stack.length > 2) && (prec <= stack[stack.length - 2].prec)) {
-        right = stack.pop();
-        operator = stack.pop().value;
-        left = stack.pop();
-        markers.pop();
-        expr = finishBinaryExpression(operator, left, right);
-        stack.push(expr);
-      }
-
-      // Shift.
-      token = lex();
-      token.prec = prec;
-      stack.push(token);
-      markers.push(lookahead);
-      expr = parseUnaryExpression();
-      stack.push(expr);
-    }
-
-    // Final reduce to clean-up the stack.
-    i = stack.length - 1;
-    expr = stack[i];
-    markers.pop();
-    while (i > 1) {
-      markers.pop();
-      expr = finishBinaryExpression(stack[i - 1].value, stack[i - 2], expr);
-      i -= 2;
-    }
-
-    return expr;
-  }
-
-  // 11.12 Conditional Operator
-
-  function parseConditionalExpression() {
-    var expr, consequent, alternate;
-
-    expr = parseBinaryExpression();
-
-    if (match('?')) {
-      lex();
-      consequent = parseConditionalExpression();
-      expect(':');
-      alternate = parseConditionalExpression();
-
-      expr = finishConditionalExpression(expr, consequent, alternate);
-    }
-
-    return expr;
-  }
-
-  // 11.14 Comma Operator
-
-  function parseExpression() {
-    var expr = parseConditionalExpression();
-
-    if (match(',')) {
-      throw new Error(DISABLED); // no sequence expressions
-    }
-
-    return expr;
-  }
-
-  function parse$3(code) {
-    source$1 = code;
-    index$1 = 0;
-    length = source$1.length;
-    lookahead = null;
-
-    peek$1();
-
-    var expr = parseExpression();
-
-    if (lookahead.type !== TokenEOF) {
-      throw new Error("Unexpect token after expression.");
-    }
-    return expr;
-  }
-
-  var constants = {
-    NaN:       'NaN',
-    E:         'Math.E',
-    LN2:       'Math.LN2',
-    LN10:      'Math.LN10',
-    LOG2E:     'Math.LOG2E',
-    LOG10E:    'Math.LOG10E',
-    PI:        'Math.PI',
-    SQRT1_2:   'Math.SQRT1_2',
-    SQRT2:     'Math.SQRT2',
-    MIN_VALUE: 'Number.MIN_VALUE',
-    MAX_VALUE: 'Number.MAX_VALUE'
-  };
-
-  function functions(codegen) {
-
-    function fncall(name, args, cast, type) {
-      var obj = codegen(args[0]);
-      if (cast) {
-        obj = cast + '(' + obj + ')';
-        if (cast.lastIndexOf('new ', 0) === 0) obj = '(' + obj + ')';
-      }
-      return obj + '.' + name + (type < 0 ? '' : type === 0 ?
-        '()' :
-        '(' + args.slice(1).map(codegen).join(',') + ')');
-    }
-
-    function fn(name, cast, type) {
-      return function(args) {
-        return fncall(name, args, cast, type);
-      };
-    }
-
-    var DATE = 'new Date',
-        STRING = 'String',
-        REGEXP = 'RegExp';
-
-    return {
-      // MATH functions
-      isNaN:    'isNaN',
-      isFinite: 'isFinite',
-      abs:      'Math.abs',
-      acos:     'Math.acos',
-      asin:     'Math.asin',
-      atan:     'Math.atan',
-      atan2:    'Math.atan2',
-      ceil:     'Math.ceil',
-      cos:      'Math.cos',
-      exp:      'Math.exp',
-      floor:    'Math.floor',
-      log:      'Math.log',
-      max:      'Math.max',
-      min:      'Math.min',
-      pow:      'Math.pow',
-      random:   'Math.random',
-      round:    'Math.round',
-      sin:      'Math.sin',
-      sqrt:     'Math.sqrt',
-      tan:      'Math.tan',
-
-      clamp: function(args) {
-        if (args.length < 3) error('Missing arguments to clamp function.');
-        if (args.length > 3) error('Too many arguments to clamp function.');
-        var a = args.map(codegen);
-        return 'Math.max('+a[1]+', Math.min('+a[2]+','+a[0]+'))';
-      },
-
-      // DATE functions
-      now:             'Date.now',
-      utc:             'Date.UTC',
-      datetime:        DATE,
-      date:            fn('getDate', DATE, 0),
-      day:             fn('getDay', DATE, 0),
-      year:            fn('getFullYear', DATE, 0),
-      month:           fn('getMonth', DATE, 0),
-      hours:           fn('getHours', DATE, 0),
-      minutes:         fn('getMinutes', DATE, 0),
-      seconds:         fn('getSeconds', DATE, 0),
-      milliseconds:    fn('getMilliseconds', DATE, 0),
-      time:            fn('getTime', DATE, 0),
-      timezoneoffset:  fn('getTimezoneOffset', DATE, 0),
-      utcdate:         fn('getUTCDate', DATE, 0),
-      utcday:          fn('getUTCDay', DATE, 0),
-      utcyear:         fn('getUTCFullYear', DATE, 0),
-      utcmonth:        fn('getUTCMonth', DATE, 0),
-      utchours:        fn('getUTCHours', DATE, 0),
-      utcminutes:      fn('getUTCMinutes', DATE, 0),
-      utcseconds:      fn('getUTCSeconds', DATE, 0),
-      utcmilliseconds: fn('getUTCMilliseconds', DATE, 0),
-
-      // sequence functions
-      length:      fn('length', null, -1),
-      join:        fn('join', null),
-      indexof:     fn('indexOf', null),
-      lastindexof: fn('lastIndexOf', null),
-      slice:       fn('slice', null),
-
-      reverse: function(args) {
-        return '('+codegen(args[0])+').slice().reverse()';
-      },
-
-      // STRING functions
-      parseFloat:  'parseFloat',
-      parseInt:    'parseInt',
-      upper:       fn('toUpperCase', STRING, 0),
-      lower:       fn('toLowerCase', STRING, 0),
-      substring:   fn('substring', STRING),
-      split:       fn('split', STRING),
-      replace:     fn('replace', STRING),
-      trim:        fn('trim', STRING, 0),
-
-      // REGEXP functions
-      regexp:  REGEXP,
-      test:    fn('test', REGEXP),
-
-      // Control Flow functions
-      if: function(args) {
-          if (args.length < 3) error('Missing arguments to if function.');
-          if (args.length > 3) error('Too many arguments to if function.');
-          var a = args.map(codegen);
-          return '('+a[0]+'?'+a[1]+':'+a[2]+')';
-        }
-    };
-  }
-
-  function stripQuotes(s) {
-    var n = s && s.length - 1;
-    return n && (
-        (s[0]==='"' && s[n]==='"') ||
-        (s[0]==='\'' && s[n]==='\'')
-      ) ? s.slice(1, -1) : s;
-  }
-
-  function codegen(opt) {
-    opt = opt || {};
-
-    var whitelist = opt.whitelist ? toSet(opt.whitelist) : {},
-        blacklist = opt.blacklist ? toSet(opt.blacklist) : {},
-        constants$1 = opt.constants || constants,
-        functions$1 = (opt.functions || functions)(visit),
-        globalvar = opt.globalvar,
-        fieldvar = opt.fieldvar,
-        globals = {},
-        fields = {},
-        memberDepth = 0;
-
-    var outputGlobal = isFunction(globalvar)
-      ? globalvar
-      : function (id) { return globalvar + '["' + id + '"]'; };
-
-    function visit(ast) {
-      if (isString(ast)) return ast;
-      var generator = Generators[ast.type];
-      if (generator == null) error('Unsupported type: ' + ast.type);
-      return generator(ast);
-    }
-
-    var Generators = {
-      Literal: function(n) {
-          return n.raw;
-        },
-
-      Identifier: function(n) {
-        var id = n.name;
-        if (memberDepth > 0) {
-          return id;
-        } else if (blacklist.hasOwnProperty(id)) {
-          return error('Illegal identifier: ' + id);
-        } else if (constants$1.hasOwnProperty(id)) {
-          return constants$1[id];
-        } else if (whitelist.hasOwnProperty(id)) {
-          return id;
-        } else {
-          globals[id] = 1;
-          return outputGlobal(id);
-        }
-      },
-
-      MemberExpression: function(n) {
-          var d = !n.computed;
-          var o = visit(n.object);
-          if (d) memberDepth += 1;
-          var p = visit(n.property);
-          if (o === fieldvar) {
-            // strip quotes to sanitize field name (#1653)
-            fields[stripQuotes(p)] = 1;
-          }
-          if (d) memberDepth -= 1;
-          return o + (d ? '.'+p : '['+p+']');
-        },
-
-      CallExpression: function(n) {
-          if (n.callee.type !== 'Identifier') {
-            error('Illegal callee type: ' + n.callee.type);
-          }
-          var callee = n.callee.name;
-          var args = n.arguments;
-          var fn = functions$1.hasOwnProperty(callee) && functions$1[callee];
-          if (!fn) error('Unrecognized function: ' + callee);
-          return isFunction(fn)
-            ? fn(args)
-            : fn + '(' + args.map(visit).join(',') + ')';
-        },
-
-      ArrayExpression: function(n) {
-          return '[' + n.elements.map(visit).join(',') + ']';
-        },
-
-      BinaryExpression: function(n) {
-          return '(' + visit(n.left) + n.operator + visit(n.right) + ')';
-        },
-
-      UnaryExpression: function(n) {
-          return '(' + n.operator + visit(n.argument) + ')';
-        },
-
-      ConditionalExpression: function(n) {
-          return '(' + visit(n.test) +
-            '?' + visit(n.consequent) +
-            ':' + visit(n.alternate) +
-            ')';
-        },
-
-      LogicalExpression: function(n) {
-          return '(' + visit(n.left) + n.operator + visit(n.right) + ')';
-        },
-
-      ObjectExpression: function(n) {
-          return '{' + n.properties.map(visit).join(',') + '}';
-        },
-
-      Property: function(n) {
-          memberDepth += 1;
-          var k = visit(n.key);
-          memberDepth -= 1;
-          return k + ':' + visit(n.value);
-        }
-    };
-
-    function codegen(ast) {
-      var result = {
-        code:    visit(ast),
-        globals: Object.keys(globals),
-        fields:  Object.keys(fields)
-      };
-      globals = {};
-      fields = {};
-      return result;
-    }
-
-    codegen.functions = functions$1;
-    codegen.constants = constants$1;
-
-    return codegen;
-  }
-
-  const Intersect = 'intersect';
-  const Union = 'union';
-
-  var TYPE_ENUM = 'E',
-      TYPE_RANGE_INC = 'R',
-      TYPE_RANGE_EXC = 'R-E',
-      TYPE_RANGE_LE = 'R-LE',
-      TYPE_RANGE_RE = 'R-RE',
-      UNIT_INDEX = 'index:unit';
-
-  // TODO: revisit date coercion?
-  function testPoint(datum, entry) {
-    var fields = entry.fields,
-        values = entry.values,
-        n = fields.length,
-        i = 0, dval, f;
-
-    for (; i<n; ++i) {
-      f = fields[i];
-      f.getter = field.getter || field(f.field);
-      dval = f.getter(datum);
-
-      if (isDate(dval)) dval = toNumber(dval);
-      if (isDate(values[i])) values[i] = toNumber(values[i]);
-      if (isDate(values[i][0])) values[i] = values[i].map(toNumber);
-
-      if (f.type === TYPE_ENUM) {
-        // Enumerated fields can either specify individual values (single/multi selections)
-        // or an array of values (interval selections).
-        if(isArray(values[i]) ? values[i].indexOf(dval) < 0 : dval !== values[i]) {
-          return false;
-        }
-      } else {
-        if (f.type === TYPE_RANGE_INC) {
-          if (!inrange(dval, values[i])) return false;
-        } else if (f.type === TYPE_RANGE_RE) {
-          // Discrete selection of bins test within the range [bin_start, bin_end).
-          if (!inrange(dval, values[i], true, false)) return false;
-        } else if (f.type === TYPE_RANGE_EXC) { // 'R-E'/'R-LE' included for completeness.
-          if (!inrange(dval, values[i], false, false)) return false;
-        } else if (f.type === TYPE_RANGE_LE) {
-          if (!inrange(dval, values[i], false, true)) return false;
-        }
-      }
-    }
-
-    return true;
-  }
-
-  /**
-   * Tests if a tuple is contained within an interactive selection.
-   * @param {string} name - The name of the data set representing the selection.
-   *  Tuples in the dataset are of the form
-   *  {unit: string, fields: array<fielddef>, values: array<*>}.
-   *  Fielddef is of the form
-   *  {field: string, channel: string, type: 'E' | 'R'} where
-   *  'type' identifies whether tuples in the dataset enumerate
-   *  values for the field, or specify a continuous range.
-   * @param {object} datum - The tuple to test for inclusion.
-   * @param {string} op - The set operation for combining selections.
-   *   One of 'intersect' or 'union' (default).
-   * @return {boolean} - True if the datum is in the selection, false otherwise.
-   */
-  function selectionTest(name, datum, op) {
-    var data = this.context.data[name],
-        entries = data ? data.values.value : [],
-        unitIdx = data ? data[UNIT_INDEX] && data[UNIT_INDEX].value : undefined,
-        intersect = op === Intersect,
-        n = entries.length,
-        i = 0,
-        entry, miss, count, unit, b;
-
-    for (; i<n; ++i) {
-      entry = entries[i];
-
-      if (unitIdx && intersect) {
-        // multi selections union within the same unit and intersect across units.
-        miss = miss || {};
-        count = miss[unit=entry.unit] || 0;
-
-        // if we've already matched this unit, skip.
-        if (count === -1) continue;
-
-        b = testPoint(datum, entry);
-        miss[unit] = b ? -1 : ++count;
-
-        // if we match and there are no other units return true
-        // if we've missed against all tuples in this unit return false
-        if (b && unitIdx.size === 1) return true;
-        if (!b && count === unitIdx.get(unit).count) return false;
-      } else {
-        b = testPoint(datum, entry);
-
-        // if we find a miss and we do require intersection return false
-        // if we find a match and we don't require intersection return true
-        if (intersect ^ b) return b;
-      }
-    }
-
-    // if intersecting and we made it here, then we saw no misses
-    // if not intersecting, then we saw no matches
-    // if no active selections, return false
-    return n && intersect;
-  }
-
-  /**
-   * Resolves selection for use as a scale domain or reads via the API.
-   * @param {string} name - The name of the dataset representing the selection
-   * @param {string} [op='union'] - The set operation for combining selections.
-   *                 One of 'intersect' or 'union' (default).
-   * @returns {object} An object of selected fields and values.
-   */
-  function selectionResolve(name, op) {
-    var data = this.context.data[name],
-      entries = data ? data.values.value : [],
-      resolved = {}, types = {},
-      entry, fields, values, unit, field, res, resUnit, type, union,
-      n = entries.length, i = 0, j, m;
-
-    // First union all entries within the same unit.
-    for (; i < n; ++i) {
-      entry = entries[i];
-      unit = entry.unit;
-      fields = entry.fields;
-      values = entry.values;
-
-      for (j = 0, m = fields.length; j < m; ++j) {
-        field = fields[j];
-        res = resolved[field.field] || (resolved[field.field] = {});
-        resUnit = res[unit] || (res[unit] = []);
-        types[field.field] = type = field.type.charAt(0);
-        union = ops[type + '_union'];
-        res[unit] = union(resUnit, array(values[j]));
-      }
-    }
-
-    // Then resolve fields across units as per the op.
-    op = op || Union;
-    Object.keys(resolved).forEach(function (field) {
-      resolved[field] = Object.keys(resolved[field])
-        .map(function (unit) { return resolved[field][unit]; })
-        .reduce(function (acc, curr) {
-          return acc === undefined ? curr :
-            ops[types[field] + '_' + op](acc, curr);
-        });
-    });
-
-    return resolved;
-  }
-
-  var ops = {
-    E_union: function(base, value) {
-      if (!base.length) return value;
-
-      var i = 0, n = value.length;
-      for (; i<n; ++i) if (base.indexOf(value[i]) < 0) base.push(value[i]);
-      return base;
-    },
-
-    E_intersect: function(base, value) {
-      return !base.length ? value :
-        base.filter(function (v) { return value.indexOf(v) >= 0; });
-    },
-
-    R_union: function(base, value) {
-      var lo = toNumber(value[0]), hi = toNumber(value[1]);
-      if (lo > hi) {
-        lo = value[1];
-        hi = value[0];
-      }
-
-      if (!base.length) return [lo, hi];
-      if (base[0] > lo) base[0] = lo;
-      if (base[1] < hi) base[1] = hi;
-      return base;
-    },
-
-    R_intersect: function(base, value) {
-      var lo = toNumber(value[0]), hi = toNumber(value[1]);
-      if (lo > hi) {
-        lo = value[1];
-        hi = value[0];
-      }
-
-      if (!base.length) return [lo, hi];
-      if (hi < base[0] || base[1] < lo) {
-        return [];
-      } else {
-        if (base[0] < lo) base[0] = lo;
-        if (base[1] > hi) base[1] = hi;
-      }
-      return base;
-    }
-  };
-
-  const DataPrefix = ':',
-        IndexPrefix = '@';
-
-  function selectionVisitor(name, args, scope, params) {
-    if (args[0].type !== Literal) error('First argument to selection functions must be a string literal.');
-
-    const data = args[0].value,
-          op = args.length >= 2 && peek(args).value,
-          field = 'unit',
-          indexName = IndexPrefix + field,
-          dataName = DataPrefix + data;
-
-    if (op === Intersect && !params.hasOwnProperty(indexName)) {
-      params[indexName] = scope.getData(data).indataRef(scope, field);
-    }
-
-    if (!params.hasOwnProperty(dataName)) {
-      params[dataName] = scope.getData(data).tuplesRef();
-    }
-  }
-
-  function data$1(name) {
-    const data = this.context.data[name];
-    return data ? data.values.value : [];
-  }
-
-  function indata(name, field, value) {
-    const index = this.context.data[name]['index:' + field],
-          entry = index ? index.value.get(value) : undefined;
-    return entry ? entry.count : entry;
-  }
-
-  function setdata(name, tuples) {
-    const df = this.context.dataflow,
-          data = this.context.data[name],
-          input = data.input;
-
-    df.pulse(input, df.changeset().remove(truthy).insert(tuples));
-    return 1;
-  }
-
-  function encode$1(item, name, retval) {
-    if (item) {
-      const df = this.context.dataflow,
-            target = item.mark.source;
-      df.pulse(target, df.changeset().encode(item, name));
-    }
-    return retval !== undefined ? retval : item;
-  }
-
-  const formatCache = {};
-
-  function formatter(type, method, specifier) {
-    let k = type + ':' + specifier,
-        e = formatCache[k];
-    if (!e || e[0] !== method) {
-      formatCache[k] = (e = [method, method(specifier)]);
-    }
-    return e[1];
-  }
-
-  function format$2(_, specifier) {
-    return formatter('format', format$1, specifier)(_);
-  }
-
-  function timeFormat$1(_, specifier) {
-    return formatter('timeFormat', timeFormat, specifier)(_);
-  }
-
-  function utcFormat$1(_, specifier) {
-    return formatter('utcFormat', utcFormat, specifier)(_);
-  }
-
-  function timeParse$1(_, specifier) {
-    return formatter('timeParse', timeParse, specifier)(_);
-  }
-
-  function utcParse$1(_, specifier) {
-    return formatter('utcParse', utcParse, specifier)(_);
-  }
-
-  var dateObj = new Date(2000, 0, 1);
-
-  function time$2(month, day, specifier) {
-    dateObj.setMonth(month);
-    dateObj.setDate(day);
-    return timeFormat$1(dateObj, specifier);
-  }
-
-  function monthFormat(month) {
-    return time$2(month, 1, '%B');
-  }
-
-  function monthAbbrevFormat(month) {
-    return time$2(month, 1, '%b');
-  }
-
-  function dayFormat(day) {
-    return time$2(0, 2 + day, '%A');
-  }
-
-  function dayAbbrevFormat(day) {
-    return time$2(0, 2 + day, '%a');
-  }
-
-  function getScale(name, ctx) {
-    let s;
-    return isFunction(name) ? name
-      : isString(name) ? (s = ctx.scales[name]) && s.value
-      : undefined;
-  }
-
-  function range$4(name, group) {
-    const s = getScale(name, (group || this).context);
-    return s && s.range ? s.range() : [];
-  }
-
-  function domain(name, group) {
-    const s = getScale(name, (group || this).context);
-    return s ? s.domain() : [];
-  }
-
-  function bandwidth(name, group) {
-    const s = getScale(name, (group || this).context);
-    return s && s.bandwidth ? s.bandwidth() : 0;
-  }
-
-  function bandspace(count, paddingInner, paddingOuter) {
-    return bandSpace(count || 0, paddingInner || 0, paddingOuter || 0);
-  }
-
-  function copy$2(name, group) {
-    const s = getScale(name, (group || this).context);
-    return s ? s.copy() : undefined;
-  }
-
-  function scale$2(name, value, group) {
-    const s = getScale(name, (group || this).context);
-    return s && value !== undefined ? s(value) : undefined;
-  }
-
-  function invert(name, range, group) {
-    const s = getScale(name, (group || this).context);
-    return !s ? undefined
-      : isArray(range) ? (s.invertRange || s.invert)(range)
-      : (s.invert || s.invertExtent)(range);
-  }
-
-  function geoMethod(methodName, globalMethod) {
-    return function(projection, geojson, group) {
-      if (projection) {
-        // projection defined, use it
-        const p = getScale(projection, (group || this).context);
-        return p && p.path[methodName](geojson);
-      } else {
-        // projection undefined, use global method
-        return globalMethod(geojson);
-      }
-    };
-  }
-
-  const geoArea = geoMethod('area', area$3);
-  const geoBounds = geoMethod('bounds', bounds$1);
-  const geoCentroid = geoMethod('centroid', centroid);
-
-  function inScope(item) {
-    let group = this.context.group,
-        value = false;
-
-    if (group) while (item) {
-      if (item === group) { value = true; break; }
-      item = item.mark.group;
-    }
-    return value;
-  }
-
-  function intersect$3(b, opt, group) {
-    if (!b) return [];
-
-    const [u, v] = b,
-          box = new Bounds().set(u[0], u[1], v[0], v[1]),
-          scene = group || this.context.dataflow.scenegraph().root;
-
-    return intersect$1(scene, box, filter$2(opt));
-  }
-
-  function filter$2(opt) {
-    let p = null;
-
-    if (opt) {
-      const types = array(opt.marktype),
-            names = array(opt.markname);
-      p = _ => (!types.length || types.some(t => _.marktype === t))
-            && (!names.length || names.some(s => _.name === s));
-    }
-
-    return p;
-  }
-
-  function log$4(df, method, args) {
-    try {
-      df[method].apply(df, ['EXPRESSION'].concat([].slice.call(args)));
-    } catch (err) {
-      df.warn(err);
-    }
-    return args[args.length-1];
-  }
-
-  function warn() {
-    return log$4(this.context.dataflow, 'warn', arguments);
-  }
-
-  function info() {
-    return log$4(this.context.dataflow, 'info', arguments);
-  }
-
-  function debug() {
-    return log$4(this.context.dataflow, 'debug', arguments);
-  }
-
-  function merge$3() {
-    var args = [].slice.call(arguments);
-    args.unshift({});
-    return extend.apply(null, args);
-  }
-
-  function equal(a, b) {
-    return a === b || a !== a && b !== b ? true
-      : isArray(a) && isArray(b) && a.length === b.length ? equalArray(a, b)
-      : false;
-  }
-
-  function equalArray(a, b) {
-    for (let i=0, n=a.length; i<n; ++i) {
-      if (!equal(a[i], b[i])) return false;
-    }
-    return true;
-  }
-
-  function removePredicate(props) {
-    return function(_) {
-      for (let key in props) {
-        if (!equal(_[key], props[key])) return false;
-      }
-      return true;
-    };
-  }
-
-  function modify(name, insert, remove, toggle, modify, values) {
-    let df = this.context.dataflow,
-        data = this.context.data[name],
-        input = data.input,
-        changes = data.changes,
-        stamp = df.stamp(),
-        predicate, key;
-
-    if (df._trigger === false || !(input.value.length || insert || toggle)) {
-      // nothing to do!
-      return 0;
-    }
-
-    if (!changes || changes.stamp < stamp) {
-      data.changes = (changes = df.changeset());
-      changes.stamp = stamp;
-      df.runAfter(function() {
-        data.modified = true;
-        df.pulse(input, changes).run();
-      }, true, 1);
-    }
-
-    if (remove) {
-      predicate = remove === true ? truthy
-        : (isArray(remove) || isTuple(remove)) ? remove
-        : removePredicate(remove);
-      changes.remove(predicate);
-    }
-
-    if (insert) {
-      changes.insert(insert);
-    }
-
-    if (toggle) {
-      predicate = removePredicate(toggle);
-      if (input.value.some(predicate)) {
-        changes.remove(predicate);
-      } else {
-        changes.insert(toggle);
-      }
-    }
-
-    if (modify) {
-      for (key in values) {
-        changes.modify(modify, key, values[key]);
-      }
-    }
-
-    return 1;
-  }
-
-  function pinchDistance(event) {
-    const t = event.touches,
-          dx = t[0].clientX - t[1].clientX,
-          dy = t[0].clientY - t[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  function pinchAngle(event) {
-    const t = event.touches;
-    return Math.atan2(
-      t[0].clientY - t[1].clientY,
-      t[0].clientX - t[1].clientX
-    );
-  }
-
-  function scaleGradient(scale, p0, p1, count, group) {
-    scale = getScale(scale, (group || this).context);
-
-    const gradient = Gradient(p0, p1);
-
-    let stops = scale.domain(),
-        min = stops[0],
-        max = peek(stops),
-        fraction = identity;
-
-    if (!(max - min)) {
-      // expand scale if domain has zero span, fix #1479
-      scale = (scale.interpolator
-        ? scale$1('sequential')().interpolator(scale.interpolator())
-        : scale$1('linear')().interpolate(scale.interpolate()).range(scale.range())
-      ).domain([min=0, max=1]);
-    } else {
-      fraction = scaleFraction(scale, min, max);
-    }
-
-    if (scale.ticks) {
-      stops = scale.ticks(+count || 15);
-      if (min !== stops[0]) stops.unshift(min);
-      if (max !== peek(stops)) stops.push(max);
-    }
-
-    stops.forEach(_ => gradient.stop(fraction(_), scale(_)));
-
-    return gradient;
-  }
-
-  function geoShape(projection, geojson, group) {
-    const p = getScale(projection, (group || this).context);
-    return function(context) {
-      return p ? p.path.context(context)(geojson) : '';
-    }
-  }
-
-  function pathShape(path) {
-    let p = null;
-    return function(context) {
-      return context
-        ? pathRender(context, (p = p || pathParse(path)))
-        : path;
-    };
-  }
-
-  const EMPTY = {};
-
-  function datum(d) { return d.data; }
-
-  function treeNodes(name, context) {
-    const tree = data$1.call(context, name);
-    return tree.root && tree.root.lookup || EMPTY;
-  }
-
-  function treePath(name, source, target) {
-    const nodes = treeNodes(name, this),
-          s = nodes[source],
-          t = nodes[target];
-    return s && t ? s.path(t).map(datum) : undefined;
-  }
-
-  function treeAncestors(name, node) {
-    const n = treeNodes(name, this)[node];
-    return n ? n.ancestors().map(datum) : undefined;
-  }
-
-  const _window = (typeof window !== 'undefined' && window) || null;
-
-  function screen() {
-    return _window ? _window.screen : {};
-  }
-
-  function windowSize() {
-    return _window
-      ? [_window.innerWidth, _window.innerHeight]
-      : [undefined, undefined];
-  }
-
-  function containerSize() {
-    const view = this.context.dataflow,
-          el = view.container && view.container();
-    return el
-      ? [el.clientWidth, el.clientHeight]
-      : [undefined, undefined];
-  }
-
-  const DataPrefix$1   = ':';
-  const IndexPrefix$1  = '@';
-  const ScalePrefix  = '%';
-  const SignalPrefix = '$';
-
-  function dataVisitor(name, args, scope, params) {
-    if (args[0].type !== Literal) {
-      error('First argument to data functions must be a string literal.');
-    }
-
-    const data = args[0].value,
-          dataName = DataPrefix$1 + data;
-
-    if (!params.hasOwnProperty(dataName)) {
-      params[dataName] = scope.getData(data).tuplesRef();
-    }
-  }
-
-  function indataVisitor(name, args, scope, params) {
-    if (args[0].type !== Literal) error('First argument to indata must be a string literal.');
-    if (args[1].type !== Literal) error('Second argument to indata must be a string literal.');
-
-    const data = args[0].value,
-          field = args[1].value,
-          indexName = IndexPrefix$1 + field;
-
-    if (!params.hasOwnProperty(indexName)) {
-      params[indexName] = scope.getData(data).indataRef(scope, field);
-    }
-  }
-
-  function scaleVisitor(name, args, scope, params) {
-    if (args[0].type === Literal) {
-      // add scale dependency
-      addScaleDependency(scope, params, args[0].value);
-    }
-    else if (args[0].type === Identifier$1) {
-      // indirect scale lookup; add all scales as parameters
-      for (name in scope.scales) {
-        addScaleDependency(scope, params, name);
-      }
-    }
-  }
-
-  function addScaleDependency(scope, params, name) {
-    const scaleName = ScalePrefix + name;
-    if (!params.hasOwnProperty(scaleName)) {
-      try {
-        params[scaleName] = scope.scaleRef(name);
-      } catch (err) {
-        // TODO: error handling? warning?
-      }
-    }
-  }
-
-  // Expression function context object
-  const functionContext = {
-    random: function() { return exports.random(); }, // override default
-    isArray,
-    isBoolean,
-    isDate,
-    isDefined: function(_) { return _ !== undefined; },
-    isNumber,
-    isObject,
-    isRegExp,
-    isString,
-    isTuple,
-    isValid: function(_) { return _ != null && _ === _; },
-    toBoolean,
-    toDate,
-    toNumber,
-    toString,
-    flush,
-    lerp,
-    merge: merge$3,
-    pad,
-    peek,
-    span,
-    inrange,
-    truncate,
-    rgb,
-    lab,
-    hcl,
-    hsl,
-    sequence,
-    format: format$2,
-    utcFormat: utcFormat$1,
-    utcParse: utcParse$1,
-    timeFormat: timeFormat$1,
-    timeParse: timeParse$1,
-    monthFormat,
-    monthAbbrevFormat,
-    dayFormat,
-    dayAbbrevFormat,
-    quarter,
-    utcquarter,
-    warn,
-    info,
-    debug,
-    extent,
-    inScope,
-    intersect: intersect$3,
-    clampRange,
-    pinchDistance,
-    pinchAngle,
-    screen,
-    containerSize,
-    windowSize,
-    bandspace,
-    setdata,
-    pathShape,
-    panLinear,
-    panLog,
-    panPow,
-    panSymlog,
-    zoomLinear,
-    zoomLog,
-    zoomPow,
-    zoomSymlog,
-    encode: encode$1,
-    modify
-  };
-
-  const eventFunctions = ['view', 'item', 'group', 'xy', 'x', 'y'], // event functions
-        eventPrefix = 'event.vega.', // event function prefix
-        thisPrefix = 'this.', // function context prefix
-        astVisitors = {}; // AST visitors for dependency analysis
-
-  // Build expression function registry
-  function buildFunctions(codegen) {
-    const fn = functions(codegen);
-    eventFunctions.forEach(name => fn[name] = eventPrefix + name);
-    for (let name in functionContext) { fn[name] = thisPrefix + name; }
-    return fn;
-  }
-
-  // Register an expression function
-  function expressionFunction(name, fn, visitor) {
-    if (arguments.length === 1) {
-      return functionContext[name];
-    }
-
-    // register with the functionContext
-    functionContext[name] = fn;
-
-    // if there is an astVisitor register that, too
-    if (visitor) astVisitors[name] = visitor;
-
-    // if the code generator has already been initialized,
-    // we need to also register the function with it
-    if (codeGenerator) codeGenerator.functions[name] = thisPrefix + name;
-    return this;
-  }
-
-  // register expression functions with ast visitors
-  expressionFunction('bandwidth', bandwidth, scaleVisitor);
-  expressionFunction('copy', copy$2, scaleVisitor);
-  expressionFunction('domain', domain, scaleVisitor);
-  expressionFunction('range', range$4, scaleVisitor);
-  expressionFunction('invert', invert, scaleVisitor);
-  expressionFunction('scale', scale$2, scaleVisitor);
-  expressionFunction('gradient', scaleGradient, scaleVisitor);
-  expressionFunction('geoArea', geoArea, scaleVisitor);
-  expressionFunction('geoBounds', geoBounds, scaleVisitor);
-  expressionFunction('geoCentroid', geoCentroid, scaleVisitor);
-  expressionFunction('geoShape', geoShape, scaleVisitor);
-  expressionFunction('indata', indata, indataVisitor);
-  expressionFunction('data', data$1, dataVisitor);
-  expressionFunction('treePath', treePath, dataVisitor);
-  expressionFunction('treeAncestors', treeAncestors, dataVisitor);
-
-  // register Vega-Lite selection functions
-  expressionFunction('vlSelectionTest', selectionTest, selectionVisitor);
-  expressionFunction('vlSelectionResolve', selectionResolve, selectionVisitor);
-
-  // Export code generator and parameters
-  const codegenParams = {
-    blacklist:  ['_'],
-    whitelist:  ['datum', 'event', 'item'],
-    fieldvar:   'datum',
-    globalvar:  function(id) { return '_[' + $(SignalPrefix + id) + ']'; },
-    functions:  buildFunctions,
-    constants:  constants,
-    visitors:   astVisitors
-  };
-
-  var codeGenerator = codegen(codegenParams);
-
   /**
    * Parse an expression given the argument signature and body code.
    */
-  function expression(args, code, ctx) {
+  function expression$1(args, code, ctx) {
     // wrap code in return statement if expression does not terminate
     if (code[code.length-1] !== ';') {
       code = 'return(' + code + ');';
@@ -34158,41 +38069,41 @@
    * Parse an expression used to update an operator value.
    */
   function operatorExpression(code, ctx) {
-    return expression(['_'], code, ctx);
+    return expression$1(['_'], code, ctx);
   }
 
   /**
    * Parse an expression provided as an operator parameter value.
    */
   function parameterExpression(code, ctx) {
-    return expression(['datum', '_'], code, ctx);
+    return expression$1(['datum', '_'], code, ctx);
   }
 
   /**
    * Parse an expression applied to an event stream.
    */
   function eventExpression(code, ctx) {
-    return expression(['event'], code, ctx);
+    return expression$1(['event'], code, ctx);
   }
 
   /**
    * Parse an expression used to handle an event-driven operator update.
    */
   function handlerExpression(code, ctx) {
-    return expression(['_', 'event'], code, ctx);
+    return expression$1(['_', 'event'], code, ctx);
   }
 
   /**
    * Parse an expression that performs visual encoding.
    */
   function encodeExpression(code, ctx) {
-    return expression(['item', '_'], code, ctx);
+    return expression$1(['item', '_'], code, ctx);
   }
 
   /**
    * Parse a set of operator parameters.
    */
-  function parseParameters(spec, ctx, params) {
+  function parseParameters$1(spec, ctx, params) {
     params = params || {};
     var key, value;
 
@@ -34200,8 +38111,8 @@
       value = spec[key];
 
       params[key] = isArray(value)
-        ? value.map(function(v) { return parseParameter(v, ctx, params); })
-        : parseParameter(value, ctx, params);
+        ? value.map(function(v) { return parseParameter$2(v, ctx, params); })
+        : parseParameter$2(value, ctx, params);
     }
     return params;
   }
@@ -34209,7 +38120,7 @@
   /**
    * Parse a single parameter.
    */
-  function parseParameter(spec, ctx, params) {
+  function parseParameter$2(spec, ctx, params) {
     if (!spec || !isObject(spec)) return spec;
 
     for (var i=0, n=PARSERS.length, p; i<n; ++i) {
@@ -34246,7 +38157,7 @@
    */
   function getExpression(_, ctx, params) {
     if (_.$params) { // parse expression parameters
-      parseParameters(_.$params, ctx, params);
+      parseParameters$1(_.$params, ctx, params);
     }
     var k = 'e:' + _.$expr + '_' + _.$name;
     return ctx.fn[k]
@@ -34309,7 +38220,7 @@
   function getSubflow(_, ctx) {
     var spec = _.$subflow;
     return function(dataflow, key, parent) {
-      var subctx = parse$4(spec, ctx.fork()),
+      var subctx = parse$5(spec, ctx.fork()),
           op = subctx.get(spec.operators[0].id),
           p = subctx.signals.parent;
       if (p) p.set(parent);
@@ -34355,7 +38266,7 @@
       var op = ctx.get(spec.id);
       if (!op) error('Invalid operator id: ' + spec.id);
       ctx.dataflow.connect(op, op.parameters(
-        parseParameters(spec.params, ctx),
+        parseParameters$1(spec.params, ctx),
         spec.react,
         spec.initonly
       ));
@@ -34365,7 +38276,7 @@
   /**
    * Parse an event stream specification.
    */
-  function parseStream(spec, ctx) {
+  function parseStream$2(spec, ctx) {
     var filter = spec.filter != null ? eventExpression(spec.filter, ctx) : undefined,
         stream = spec.stream != null ? ctx.get(spec.stream) : undefined,
         args;
@@ -34407,7 +38318,7 @@
   /**
    * Parse an event-driven operator update.
    */
-  function parseUpdate(spec, ctx) {
+  function parseUpdate$1(spec, ctx) {
     var srcid = isObject(srcid = spec.source) ? srcid.$ref : srcid,
         source = ctx.get(srcid),
         target = null,
@@ -34424,7 +38335,7 @@
 
     if (update && update.$expr) {
       if (update.$params) {
-        params = parseParameters(update.$params, ctx);
+        params = parseParameters$1(update.$params, ctx);
       }
       update = handlerExpression(update.$expr, ctx);
     }
@@ -34435,7 +38346,7 @@
   /**
    * Parse a serialized dataflow specification.
    */
-  function parse$4(spec, ctx) {
+  function parse$5(spec, ctx) {
     var operators = spec.operators || [];
 
     // parse background
@@ -34460,12 +38371,12 @@
 
     // parse streams
     (spec.streams || []).forEach(function(entry) {
-      parseStream(entry, ctx);
+      parseStream$2(entry, ctx);
     });
 
     // parse updates
     (spec.updates || []).forEach(function(entry) {
-      parseUpdate(entry, ctx);
+      parseUpdate$1(entry, ctx);
     });
 
     return ctx.resolve();
@@ -34654,10 +38565,10 @@
 
   function runtime(view, spec, functions) {
     var fn = functions || functionContext;
-    return parse$4(spec, context$2(view, transforms, fn));
+    return parse$5(spec, context$2(view, transforms, fn));
   }
 
-  function scale$3(name) {
+  function scale$4(name) {
     var scales = this._runtime.scales;
     if (!scales.hasOwnProperty(name)) {
       error('Unrecognized scale or projection: ' + name);
@@ -34668,7 +38579,7 @@
   var Width = 'width',
       Height = 'height',
       Padding$1 = 'padding',
-      Skip = {skip: true};
+      Skip$2 = {skip: true};
 
   function viewWidth(view, width) {
     var a = view.autosize(),
@@ -34731,14 +38642,14 @@
       // width value changed: update signal, skip resize op
       if (view.width() !== width) {
         rerun = 1;
-        view.signal(Width, width, Skip); // set width, skip update calc
+        view.signal(Width, width, Skip$2); // set width, skip update calc
         view._resizeWidth.skip(true); // skip width resize handler
       }
 
       // height value changed: update signal, skip resize op
       if (view.height() !== height) {
         rerun = 1;
-        view.signal(Height, height, Skip); // set height, skip update calc
+        view.signal(Height, height, Skip$2); // set height, skip update calc
         view._resizeHeight.skip(true); // skip height resize handler
       }
 
@@ -34860,7 +38771,7 @@
    * @constructor
    * @param {object} spec - The Vega dataflow runtime specification.
    */
-  function View(spec, options) {
+  function View$1(spec, options) {
     var view = this;
     options = options || {};
 
@@ -34930,11 +38841,11 @@
     if (options.container) view.initialize(options.container, options.bind);
   }
 
-  var prototype$1m = inherits(View, Dataflow);
+  var prototype$1o = inherits(View$1, Dataflow);
 
   // -- DATAFLOW / RENDERING ----
 
-  prototype$1m.evaluate = async function(encode, prerun, postrun) {
+  prototype$1o.evaluate = async function(encode, prerun, postrun) {
     // evaluate dataflow and prerun
     await Dataflow.prototype.evaluate.call(this, encode, prerun);
 
@@ -34960,22 +38871,22 @@
     return this;
   };
 
-  prototype$1m.dirty = function(item) {
+  prototype$1o.dirty = function(item) {
     this._redraw = true;
     this._renderer && this._renderer.dirty(item);
   };
 
   // -- GET / SET ----
 
-  prototype$1m.container = function() {
+  prototype$1o.container = function() {
     return this._el;
   };
 
-  prototype$1m.scenegraph = function() {
+  prototype$1o.scenegraph = function() {
     return this._scenegraph;
   };
 
-  prototype$1m.origin = function() {
+  prototype$1o.origin = function() {
     return this._origin.slice();
   };
 
@@ -34985,14 +38896,14 @@
       : error('Unrecognized signal name: ' + $(name));
   }
 
-  prototype$1m.signal = function(name, value, options) {
+  prototype$1o.signal = function(name, value, options) {
     var op = lookupSignal(this, name);
     return arguments.length === 1
       ? op.value
       : this.update(op, value, options);
   };
 
-  prototype$1m.background = function(_) {
+  prototype$1o.background = function(_) {
     if (arguments.length) {
       this._background = _;
       this._resize = 1;
@@ -35002,23 +38913,23 @@
     }
   };
 
-  prototype$1m.width = function(_) {
+  prototype$1o.width = function(_) {
     return arguments.length ? this.signal('width', _) : this.signal('width');
   };
 
-  prototype$1m.height = function(_) {
+  prototype$1o.height = function(_) {
     return arguments.length ? this.signal('height', _) : this.signal('height');
   };
 
-  prototype$1m.padding = function(_) {
+  prototype$1o.padding = function(_) {
     return arguments.length ? this.signal('padding', _) : this.signal('padding');
   };
 
-  prototype$1m.autosize = function(_) {
+  prototype$1o.autosize = function(_) {
     return arguments.length ? this.signal('autosize', _) : this.signal('autosize');
   };
 
-  prototype$1m.renderer = function(type) {
+  prototype$1o.renderer = function(type) {
     if (!arguments.length) return this._renderType;
     if (!renderModule(type)) error('Unrecognized renderer type: ' + type);
     if (type !== this._renderType) {
@@ -35028,7 +38939,7 @@
     return this;
   };
 
-  prototype$1m.tooltip = function(handler) {
+  prototype$1o.tooltip = function(handler) {
     if (!arguments.length) return this._tooltip;
     if (handler !== this._tooltip) {
       this._tooltip = handler;
@@ -35037,7 +38948,7 @@
     return this;
   };
 
-  prototype$1m.loader = function(loader) {
+  prototype$1o.loader = function(loader) {
     if (!arguments.length) return this._loader;
     if (loader !== this._loader) {
       Dataflow.prototype.loader.call(this, loader);
@@ -35046,14 +38957,14 @@
     return this;
   };
 
-  prototype$1m.resize = function() {
+  prototype$1o.resize = function() {
     // set flag to perform autosize
     this._autosize = 1;
     // touch autosize signal to ensure top-level ViewLayout runs
     return this.touch(lookupSignal(this, 'autosize'));
   };
 
-  prototype$1m._resetRenderer = function() {
+  prototype$1o._resetRenderer = function() {
     if (this._renderer) {
       this._renderer = null;
       this.initialize(this._el, this._elBind);
@@ -35061,11 +38972,11 @@
   };
 
   // -- SIZING ----
-  prototype$1m._resizeView = resizeView;
+  prototype$1o._resizeView = resizeView;
 
   // -- EVENT HANDLING ----
 
-  prototype$1m.addEventListener = function(type, handler, options) {
+  prototype$1o.addEventListener = function(type, handler, options) {
     var callback = handler;
     if (!(options && options.trap === false)) {
       // wrap callback in error handler
@@ -35076,7 +38987,7 @@
     return this;
   };
 
-  prototype$1m.removeEventListener = function(type, handler) {
+  prototype$1o.removeEventListener = function(type, handler) {
     var handlers = this._handler.handlers(type),
         i = handlers.length, h, t;
 
@@ -35092,7 +39003,7 @@
     return this;
   };
 
-  prototype$1m.addResizeListener = function(handler) {
+  prototype$1o.addResizeListener = function(handler) {
     var l = this._resizeListeners;
     if (l.indexOf(handler) < 0) {
       // add handler if it isn't already registered
@@ -35103,7 +39014,7 @@
     return this;
   };
 
-  prototype$1m.removeResizeListener = function(handler) {
+  prototype$1o.removeResizeListener = function(handler) {
     var l = this._resizeListeners,
         i = l.indexOf(handler);
     if (i >= 0) {
@@ -35137,23 +39048,23 @@
     return view;
   }
 
-  prototype$1m.addSignalListener = function(name, handler) {
+  prototype$1o.addSignalListener = function(name, handler) {
     return addOperatorListener(this, name, lookupSignal(this, name), handler);
   };
 
-  prototype$1m.removeSignalListener = function(name, handler) {
+  prototype$1o.removeSignalListener = function(name, handler) {
     return removeOperatorListener(this, lookupSignal(this, name), handler);
   };
 
-  prototype$1m.addDataListener = function(name, handler) {
+  prototype$1o.addDataListener = function(name, handler) {
     return addOperatorListener(this, name, dataref(this, name).values, handler);
   };
 
-  prototype$1m.removeDataListener = function(name, handler) {
+  prototype$1o.removeDataListener = function(name, handler) {
     return removeOperatorListener(this, dataref(this, name).values, handler);
   };
 
-  prototype$1m.preventDefault = function(_) {
+  prototype$1o.preventDefault = function(_) {
     if (arguments.length) {
       this._preventDefault = _;
       return this;
@@ -35162,3937 +39073,34 @@
     }
   };
 
-  prototype$1m.timer = timer$1;
-  prototype$1m.events = events$1;
-  prototype$1m.finalize = finalize;
-  prototype$1m.hover = hover;
+  prototype$1o.timer = timer$1;
+  prototype$1o.events = events$1;
+  prototype$1o.finalize = finalize;
+  prototype$1o.hover = hover;
 
   // -- DATA ----
-  prototype$1m.data = data;
-  prototype$1m.change = change;
-  prototype$1m.insert = insert;
-  prototype$1m.remove = remove;
+  prototype$1o.data = data$1;
+  prototype$1o.change = change;
+  prototype$1o.insert = insert;
+  prototype$1o.remove = remove;
 
   // -- SCALES --
-  prototype$1m.scale = scale$3;
+  prototype$1o.scale = scale$4;
 
   // -- INITIALIZATION ----
-  prototype$1m.initialize = initialize$1;
+  prototype$1o.initialize = initialize$1;
 
   // -- HEADLESS RENDERING ----
-  prototype$1m.toImageURL = renderToImageURL;
-  prototype$1m.toCanvas = renderToCanvas;
-  prototype$1m.toSVG = renderToSVG;
+  prototype$1o.toImageURL = renderToImageURL;
+  prototype$1o.toCanvas = renderToCanvas;
+  prototype$1o.toSVG = renderToSVG;
 
   // -- SAVE / RESTORE STATE ----
-  prototype$1m.getState = getState$1;
-  prototype$1m.setState = setState$1;
-
-  function parseAutosize(spec, config) {
-    spec = spec || config.autosize;
-    return isObject(spec)
-      ? spec
-      : {type: spec || 'pad'};
-  }
-
-  function parsePadding(spec, config) {
-    spec = spec || config.padding;
-    return isObject(spec)
-      ? {
-          top:    number$3(spec.top),
-          bottom: number$3(spec.bottom),
-          left:   number$3(spec.left),
-          right:  number$3(spec.right)
-        }
-      : paddingObject(number$3(spec));
-  }
-
-  function number$3(_) {
-    return +_ || 0;
-  }
-
-  function paddingObject(_) {
-    return {top: _, bottom: _, left: _, right: _};
-  }
-
-  var OUTER = 'outer',
-      OUTER_INVALID = ['value', 'update', 'init', 'react', 'bind'];
-
-  function outerError(prefix, name) {
-    error(prefix + ' for "outer" push: ' + $(name));
-  }
-
-  function parseSignal(signal, scope) {
-    var name = signal.name;
-
-    if (signal.push === OUTER) {
-      // signal must already be defined, raise error if not
-      if (!scope.signals[name]) outerError('No prior signal definition', name);
-      // signal push must not use properties reserved for standard definition
-      OUTER_INVALID.forEach(function(prop) {
-        if (signal[prop] !== undefined) outerError('Invalid property ', prop);
-      });
-    } else {
-      // define a new signal in the current scope
-      var op = scope.addSignal(name, signal.value);
-      if (signal.react === false) op.react = false;
-      if (signal.bind) scope.addBinding(name, signal.bind);
-    }
-  }
-
-  function parseExpression$1(expr, scope, preamble) {
-    var params = {}, ast, gen;
-
-    // parse the expression to an abstract syntax tree (ast)
-    try {
-      expr = isString(expr) ? expr : ($(expr) + '');
-      ast = parse$3(expr);
-    } catch (err) {
-      error('Expression parse error: ' + expr);
-    }
-
-    // analyze ast function calls for dependencies
-    ast.visit(function visitor(node) {
-      if (node.type !== CallExpression) return;
-      var name = node.callee.name,
-          visit = codegenParams.visitors[name];
-      if (visit) visit(name, node.arguments, scope, params);
-    });
-
-    // perform code generation
-    gen = codeGenerator(ast);
-
-    // collect signal dependencies
-    gen.globals.forEach(function(name) {
-      var signalName = SignalPrefix + name;
-      if (!params.hasOwnProperty(signalName) && scope.getSignal(name)) {
-        params[signalName] = scope.signalRef(name);
-      }
-    });
-
-    // return generated expression code and dependencies
-    return {
-      $expr:   preamble ? preamble + 'return(' + gen.code + ');' : gen.code,
-      $fields: gen.fields,
-      $params: params
-    };
-  }
-
-  function Entry(type, value, params, parent) {
-    this.id = -1;
-    this.type = type;
-    this.value = value;
-    this.params = params;
-    if (parent) this.parent = parent;
-  }
-
-  function entry(type, value, params, parent) {
-    return new Entry(type, value, params, parent);
-  }
-
-  function operator(value, params) {
-    return entry('operator', value, params);
-  }
-
-  // -----
-
-  function ref(op) {
-    var ref = {$ref: op.id};
-    // if operator not yet registered, cache ref to resolve later
-    if (op.id < 0) (op.refs = op.refs || []).push(ref);
-    return ref;
-  }
-
-  var tupleidRef = {
-    $tupleid: 1,
-    toString: function() { return ':_tupleid_:'; }
-  };
-
-  function fieldRef(field, name) {
-    return name ? {$field: field, $name: name} : {$field: field};
-  }
-
-  var keyFieldRef = fieldRef('key');
-
-  function compareRef(fields, orders) {
-    return {$compare: fields, $order: orders};
-  }
-
-  function keyRef(fields, flat) {
-    var ref = {$key: fields};
-    if (flat) ref.$flat = true;
-    return ref;
-  }
-
-  // -----
-
-  var Ascending  = 'ascending';
-
-  var Descending = 'descending';
-
-  function sortKey(sort) {
-    return !isObject(sort) ? ''
-      : (sort.order === Descending ? '-' : '+')
-        + aggrField(sort.op, sort.field);
-  }
-
-  function aggrField(op, field) {
-    return (op && op.signal ? '$' + op.signal : op || '')
-      + (op && field ? '_' : '')
-      + (field && field.signal ? '$' + field.signal : field || '');
-  }
-
-  // -----
-
-  var Scope = 'scope';
-
-  var View$1 = 'view';
-
-  function isSignal(_) {
-    return _ && _.signal;
-  }
-
-  function isExpr(_) {
-    return _ && _.expr;
-  }
-
-  function hasSignal(_) {
-    if (isSignal(_)) return true;
-    if (isObject(_)) for (var key in _) {
-      if (hasSignal(_[key])) return true;
-    }
-    return false;
-  }
-
-  function value(specValue, defaultValue) {
-    return specValue != null ? specValue : defaultValue;
-  }
-
-  function deref(v) {
-    return v && v.signal || v;
-  }
-
-  var Timer$1 = 'timer';
-
-  function parseStream$1(stream, scope) {
-    var method = stream.merge ? mergeStream
-      : stream.stream ? nestedStream
-      : stream.type ? eventStream
-      : error('Invalid stream specification: ' + $(stream));
-
-    return method(stream, scope);
-  }
-
-  function eventSource(source) {
-     return source === Scope ? View$1 : (source || View$1);
-  }
-
-  function mergeStream(stream, scope) {
-    var list = stream.merge.map(s => parseStream$1(s, scope)),
-        entry = streamParameters({merge: list}, stream, scope);
-    return scope.addStream(entry).id;
-  }
-
-  function nestedStream(stream, scope) {
-    var id = parseStream$1(stream.stream, scope),
-        entry = streamParameters({stream: id}, stream, scope);
-    return scope.addStream(entry).id;
-  }
-
-  function eventStream(stream, scope) {
-    var id, entry;
-
-    if (stream.type === Timer$1) {
-      id = scope.event(Timer$1, stream.throttle);
-      stream = {between: stream.between, filter: stream.filter};
-    } else {
-      id = scope.event(eventSource(stream.source), stream.type);
-    }
-
-    entry = streamParameters({stream: id}, stream, scope);
-    return Object.keys(entry).length === 1
-      ? id
-      : scope.addStream(entry).id;
-  }
-
-  function streamParameters(entry, stream, scope) {
-    var param = stream.between;
-
-    if (param) {
-      if (param.length !== 2) {
-        error('Stream "between" parameter must have 2 entries: ' + $(stream));
-      }
-      entry.between = [
-        parseStream$1(param[0], scope),
-        parseStream$1(param[1], scope)
-      ];
-    }
-
-    param = stream.filter ? [].concat(stream.filter) : [];
-    if (stream.marktype || stream.markname || stream.markrole) {
-      // add filter for mark type, name and/or role
-      param.push(filterMark(stream.marktype, stream.markname, stream.markrole));
-    }
-    if (stream.source === Scope) {
-      // add filter to limit events from sub-scope only
-      param.push('inScope(event.item)');
-    }
-    if (param.length) {
-      entry.filter = parseExpression$1('(' + param.join(')&&(') + ')').$expr;
-    }
-
-    if ((param = stream.throttle) != null) {
-      entry.throttle = +param;
-    }
-
-    if ((param = stream.debounce) != null) {
-      entry.debounce = +param;
-    }
-
-    if (stream.consume) {
-      entry.consume = true;
-    }
-
-    return entry;
-  }
-
-  function filterMark(type, name, role) {
-    var item = 'event.item';
-    return item
-      + (type && type !== '*' ? '&&' + item + '.mark.marktype===\'' + type + '\'' : '')
-      + (role ? '&&' + item + '.mark.role===\'' + role + '\'' : '')
-      + (name ? '&&' + item + '.mark.name===\'' + name + '\'' : '');
-  }
-
-  /**
-   * Parse an event selector string.
-   * Returns an array of event stream definitions.
-   */
-  function selector(selector, source, marks) {
-    DEFAULT_SOURCE = source || VIEW$1;
-    MARKS = marks || DEFAULT_MARKS;
-    return parseMerge(selector.trim()).map(parseSelector);
-  }
-
-  var VIEW$1    = 'view',
-      LBRACK  = '[',
-      RBRACK  = ']',
-      LBRACE  = '{',
-      RBRACE  = '}',
-      COLON   = ':',
-      COMMA   = ',',
-      NAME    = '@',
-      GT      = '>',
-      ILLEGAL$1 = /[[\]{}]/,
-      DEFAULT_SOURCE,
-      MARKS,
-      DEFAULT_MARKS = {
-        '*': 1,
-        arc: 1,
-        area: 1,
-        group: 1,
-        image: 1,
-        line: 1,
-        path: 1,
-        rect: 1,
-        rule: 1,
-        shape: 1,
-        symbol: 1,
-        text: 1,
-        trail: 1
-      };
-
-  function isMarkType(type) {
-    return MARKS.hasOwnProperty(type);
-  }
-
-  function find$2(s, i, endChar, pushChar, popChar) {
-    var count = 0,
-        n = s.length,
-        c;
-    for (; i<n; ++i) {
-      c = s[i];
-      if (!count && c === endChar) return i;
-      else if (popChar && popChar.indexOf(c) >= 0) --count;
-      else if (pushChar && pushChar.indexOf(c) >= 0) ++count;
-    }
-    return i;
-  }
-
-  function parseMerge(s) {
-    var output = [],
-        start = 0,
-        n = s.length,
-        i = 0;
-
-    while (i < n) {
-      i = find$2(s, i, COMMA, LBRACK + LBRACE, RBRACK + RBRACE);
-      output.push(s.substring(start, i).trim());
-      start = ++i;
-    }
-
-    if (output.length === 0) {
-      throw 'Empty event selector: ' + s;
-    }
-    return output;
-  }
-
-  function parseSelector(s) {
-    return s[0] === '['
-      ? parseBetween(s)
-      : parseStream$2(s);
-  }
-
-  function parseBetween(s) {
-    var n = s.length,
-        i = 1,
-        b, stream;
-
-    i = find$2(s, i, RBRACK, LBRACK, RBRACK);
-    if (i === n) {
-      throw 'Empty between selector: ' + s;
-    }
-
-    b = parseMerge(s.substring(1, i));
-    if (b.length !== 2) {
-      throw 'Between selector must have two elements: ' + s;
-    }
-
-    s = s.slice(i + 1).trim();
-    if (s[0] !== GT) {
-      throw 'Expected \'>\' after between selector: ' + s;
-    }
-
-    b = b.map(parseSelector);
-
-    stream = parseSelector(s.slice(1).trim());
-    if (stream.between) {
-      return {
-        between: b,
-        stream: stream
-      };
-    } else {
-      stream.between = b;
-    }
-
-    return stream;
-  }
-
-  function parseStream$2(s) {
-    var stream = {source: DEFAULT_SOURCE},
-        source = [],
-        throttle = [0, 0],
-        markname = 0,
-        start = 0,
-        n = s.length,
-        i = 0, j,
-        filter;
-
-    // extract throttle from end
-    if (s[n-1] === RBRACE) {
-      i = s.lastIndexOf(LBRACE);
-      if (i >= 0) {
-        try {
-          throttle = parseThrottle(s.substring(i+1, n-1));
-        } catch (e) {
-          throw 'Invalid throttle specification: ' + s;
-        }
-        s = s.slice(0, i).trim();
-        n = s.length;
-      } else throw 'Unmatched right brace: ' + s;
-      i = 0;
-    }
-
-    if (!n) throw s;
-
-    // set name flag based on first char
-    if (s[0] === NAME) markname = ++i;
-
-    // extract first part of multi-part stream selector
-    j = find$2(s, i, COLON);
-    if (j < n) {
-      source.push(s.substring(start, j).trim());
-      start = i = ++j;
-    }
-
-    // extract remaining part of stream selector
-    i = find$2(s, i, LBRACK);
-    if (i === n) {
-      source.push(s.substring(start, n).trim());
-    } else {
-      source.push(s.substring(start, i).trim());
-      filter = [];
-      start = ++i;
-      if (start === n) throw 'Unmatched left bracket: ' + s;
-    }
-
-    // extract filters
-    while (i < n) {
-      i = find$2(s, i, RBRACK);
-      if (i === n) throw 'Unmatched left bracket: ' + s;
-      filter.push(s.substring(start, i).trim());
-      if (i < n-1 && s[++i] !== LBRACK) throw 'Expected left bracket: ' + s;
-      start = ++i;
-    }
-
-    // marshall event stream specification
-    if (!(n = source.length) || ILLEGAL$1.test(source[n-1])) {
-      throw 'Invalid event selector: ' + s;
-    }
-
-    if (n > 1) {
-      stream.type = source[1];
-      if (markname) {
-        stream.markname = source[0].slice(1);
-      } else if (isMarkType(source[0])) {
-        stream.marktype = source[0];
-      } else {
-        stream.source = source[0];
-      }
-    } else {
-      stream.type = source[0];
-    }
-    if (stream.type.slice(-1) === '!') {
-      stream.consume = true;
-      stream.type = stream.type.slice(0, -1);
-    }
-    if (filter != null) stream.filter = filter;
-    if (throttle[0]) stream.throttle = throttle[0];
-    if (throttle[1]) stream.debounce = throttle[1];
-
-    return stream;
-  }
-
-  function parseThrottle(s) {
-    var a = s.split(COMMA);
-    if (!s.length || a.length > 2) throw s;
-    return a.map(function(_) {
-      var x = +_;
-      if (x !== x) throw s;
-      return x;
-    });
-  }
-
-  var preamble = 'var datum=event.item&&event.item.datum;';
-
-  function parseUpdate$1(spec, scope, target) {
-    var events = spec.events,
-        update = spec.update,
-        encode = spec.encode,
-        sources = [],
-        entry = {target: target};
-
-    if (!events) {
-      error('Signal update missing events specification.');
-    }
-
-    // interpret as an event selector string
-    if (isString(events)) {
-      events = selector(events, scope.isSubscope() ? Scope : View$1);
-    }
-
-    // separate event streams from signal updates
-    events = array(events)
-      .filter(s => s.signal || s.scale ? (sources.push(s), 0) : 1);
-
-    // merge internal operator listeners
-    if (sources.length > 1) {
-      sources = [mergeSources(sources)];
-    }
-
-    // merge event streams, include as source
-    if (events.length) {
-      sources.push(events.length > 1 ? {merge: events} : events[0]);
-    }
-
-    if (encode != null) {
-      if (update) error('Signal encode and update are mutually exclusive.');
-      update = 'encode(item(),' + $(encode) + ')';
-    }
-
-    // resolve update value
-    entry.update = isString(update) ? parseExpression$1(update, scope, preamble)
-      : update.expr != null ? parseExpression$1(update.expr, scope, preamble)
-      : update.value != null ? update.value
-      : update.signal != null ? {
-          $expr:   '_.value',
-          $params: {value: scope.signalRef(update.signal)}
-        }
-      : error('Invalid signal update specification.');
-
-    if (spec.force) {
-      entry.options = {force: true};
-    }
-
-    sources.forEach(function(source) {
-      scope.addUpdate(extend(streamSource(source, scope), entry));
-    });
-  }
-
-  function streamSource(stream, scope) {
-    return {
-      source: stream.signal ? scope.signalRef(stream.signal)
-            : stream.scale ? scope.scaleRef(stream.scale)
-            : parseStream$1(stream, scope)
-    };
-  }
-
-  function mergeSources(sources) {
-    return {
-      signal: '['
-        + sources.map(s => s.scale ? 'scale("' + s.scale + '")' : s.signal)
-        + ']'
-    };
-  }
-
-  function parseSignalUpdates(signal, scope) {
-    var op = scope.getSignal(signal.name),
-        expr = signal.update;
-
-    if (signal.init) {
-      if (expr) {
-        error('Signals can not include both init and update expressions.');
-      } else {
-        expr = signal.init;
-        op.initonly = true;
-      }
-    }
-
-    if (expr) {
-      expr = parseExpression$1(expr, scope);
-      op.update = expr.$expr;
-      op.params = expr.$params;
-    }
-
-    if (signal.on) {
-      signal.on.forEach(function(_) {
-        parseUpdate$1(_, scope, op.id);
-      });
-    }
-  }
-
-  function transform$2(name) {
-    return function(params, value, parent) {
-      return entry(name, value, params || undefined, parent);
-    };
-  }
-
-  var Aggregate$1 = transform$2('aggregate');
-  var AxisTicks$1 = transform$2('axisticks');
-  var Bound$1 = transform$2('bound');
-  var Collect$1 = transform$2('collect');
-  var Compare$1 = transform$2('compare');
-  var DataJoin$1 = transform$2('datajoin');
-  var Encode$1 = transform$2('encode');
-  var Expression$1 = transform$2('expression');
-  var Facet$1 = transform$2('facet');
-  var Field$1 = transform$2('field');
-  var Key$1 = transform$2('key');
-  var LegendEntries$1 = transform$2('legendentries');
-  var Load$1 = transform$2('load');
-  var Mark$1 = transform$2('mark');
-  var MultiExtent$1 = transform$2('multiextent');
-  var MultiValues$1 = transform$2('multivalues');
-  var Overlap$1 = transform$2('overlap');
-  var Params$2 = transform$2('params');
-  var PreFacet$1 = transform$2('prefacet');
-  var Projection$1 = transform$2('projection');
-  var Proxy$1 = transform$2('proxy');
-  var Relay$1 = transform$2('relay');
-  var Render$1 = transform$2('render');
-  var Scale$1 = transform$2('scale');
-  var Sieve$1 = transform$2('sieve');
-  var SortItems$1 = transform$2('sortitems');
-  var ViewLayout$1 = transform$2('viewlayout');
-  var Values$1 = transform$2('values');
-
-  var FIELD_REF_ID = 0;
-
-  function initScale(spec, scope) {
-    var type = spec.type || 'linear';
-
-    if (!isValidScaleType(type)) {
-      error('Unrecognized scale type: ' + $(type));
-    }
-
-    scope.addScale(spec.name, {
-      type:   type,
-      domain: undefined
-    });
-  }
-
-  function parseScale(spec, scope) {
-    var params = scope.getScale(spec.name).params,
-        key;
-
-    params.domain = parseScaleDomain(spec.domain, spec, scope);
-
-    if (spec.range != null) {
-      params.range = parseScaleRange(spec, scope, params);
-    }
-
-    if (spec.interpolate != null) {
-      parseScaleInterpolate(spec.interpolate, params);
-    }
-
-    if (spec.nice != null) {
-      params.nice = parseScaleNice(spec.nice);
-    }
-
-    if (spec.bins != null) {
-      params.bins = parseScaleBins(spec.bins, scope);
-    }
-
-    for (key in spec) {
-      if (params.hasOwnProperty(key) || key === 'name') continue;
-      params[key] = parseLiteral(spec[key], scope);
-    }
-  }
-
-  function parseLiteral(v, scope) {
-    return !isObject(v) ? v
-      : v.signal ? scope.signalRef(v.signal)
-      : error('Unsupported object: ' + $(v));
-  }
-
-  function parseArray(v, scope) {
-    return v.signal
-      ? scope.signalRef(v.signal)
-      : v.map(v => parseLiteral(v, scope));
-  }
-
-  function dataLookupError(name) {
-    error('Can not find data set: ' + $(name));
-  }
-
-  // -- SCALE DOMAIN ----
-
-  function parseScaleDomain(domain, spec, scope) {
-    if (!domain) {
-      if (spec.domainMin != null || spec.domainMax != null) {
-        error('No scale domain defined for domainMin/domainMax to override.');
-      }
-      return; // default domain
-    }
-
-    return domain.signal ? scope.signalRef(domain.signal)
-      : (isArray(domain) ? explicitDomain
-      : domain.fields ? multipleDomain
-      : singularDomain)(domain, spec, scope);
-  }
-
-  function explicitDomain(domain, spec, scope) {
-    return domain.map(function(v) {
-      return parseLiteral(v, scope);
-    });
-  }
-
-  function singularDomain(domain, spec, scope) {
-    var data = scope.getData(domain.data);
-    if (!data) dataLookupError(domain.data);
-
-    return isDiscrete(spec.type)
-        ? data.valuesRef(scope, domain.field, parseSort(domain.sort, false))
-        : isQuantile(spec.type) ? data.domainRef(scope, domain.field)
-        : data.extentRef(scope, domain.field);
-  }
-
-  function multipleDomain(domain, spec, scope) {
-    var data = domain.data,
-        fields = domain.fields.reduce(function(dom, d) {
-          d = isString(d) ? {data: data, field: d}
-            : (isArray(d) || d.signal) ? fieldRef$1(d, scope)
-            : d;
-          dom.push(d);
-          return dom;
-        }, []);
-
-    return (isDiscrete(spec.type) ? ordinalMultipleDomain
-      : isQuantile(spec.type) ? quantileMultipleDomain
-      : numericMultipleDomain)(domain, scope, fields);
-  }
-
-  function fieldRef$1(data, scope) {
-    var name = '_:vega:_' + (FIELD_REF_ID++),
-        coll = Collect$1({});
-
-    if (isArray(data)) {
-      coll.value = {$ingest: data};
-    } else if (data.signal) {
-      var code = 'setdata(' + $(name) + ',' + data.signal + ')';
-      coll.params.input = scope.signalRef(code);
-    }
-    scope.addDataPipeline(name, [coll, Sieve$1({})]);
-    return {data: name, field: 'data'};
-  }
-
-  function ordinalMultipleDomain(domain, scope, fields) {
-    var counts, a, c, v;
-
-    // get value counts for each domain field
-    counts = fields.map(function(f) {
-      var data = scope.getData(f.data);
-      if (!data) dataLookupError(f.data);
-      return data.countsRef(scope, f.field);
-    });
-
-    // sum counts from all fields
-    a = scope.add(Aggregate$1({
-      groupby: keyFieldRef,
-      ops:['sum'], fields: [scope.fieldRef('count')], as:['count'],
-      pulse: counts
-    }));
-
-    // collect aggregate output
-    c = scope.add(Collect$1({pulse: ref(a)}));
-
-    // extract values for combined domain
-    v = scope.add(Values$1({
-      field: keyFieldRef,
-      sort:  scope.sortRef(parseSort(domain.sort, true)),
-      pulse: ref(c)
-    }));
-
-    return ref(v);
-  }
-
-  function parseSort(sort, multidomain) {
-    if (sort) {
-      if (!sort.field && !sort.op) {
-        if (isObject(sort)) sort.field = 'key';
-        else sort = {field: 'key'};
-      } else if (!sort.field && sort.op !== 'count') {
-        error('No field provided for sort aggregate op: ' + sort.op);
-      } else if (multidomain && sort.field) {
-        error('Multiple domain scales can not sort by field.');
-      } else if (multidomain && sort.op && sort.op !== 'count') {
-        error('Multiple domain scales support op count only.');
-      }
-    }
-    return sort;
-  }
-
-  function quantileMultipleDomain(domain, scope, fields) {
-    // get value arrays for each domain field
-    var values = fields.map(function(f) {
-      var data = scope.getData(f.data);
-      if (!data) dataLookupError(f.data);
-      return data.domainRef(scope, f.field);
-    });
-
-    // combine value arrays
-    return ref(scope.add(MultiValues$1({values: values})));
-  }
-
-  function numericMultipleDomain(domain, scope, fields) {
-    // get extents for each domain field
-    var extents = fields.map(function(f) {
-      var data = scope.getData(f.data);
-      if (!data) dataLookupError(f.data);
-      return data.extentRef(scope, f.field);
-    });
-
-    // combine extents
-    return ref(scope.add(MultiExtent$1({extents: extents})));
-  }
-
-  // -- SCALE BINS -----
-
-  function parseScaleBins(v, scope) {
-    return v.signal || isArray(v)
-      ? parseArray(v, scope)
-      : scope.objectProperty(v);
-  }
-
-  // -- SCALE NICE -----
-
-  function parseScaleNice(nice) {
-    return isObject(nice)
-      ? {
-          interval: parseLiteral(nice.interval),
-          step: parseLiteral(nice.step)
-        }
-      : parseLiteral(nice);
-  }
-
-  // -- SCALE INTERPOLATION -----
-
-  function parseScaleInterpolate(interpolate, params) {
-    params.interpolate = parseLiteral(interpolate.type || interpolate);
-    if (interpolate.gamma != null) {
-      params.interpolateGamma = parseLiteral(interpolate.gamma);
-    }
-  }
-
-  // -- SCALE RANGE -----
-
-  function parseScaleRange(spec, scope, params) {
-    var range = spec.range,
-        config = scope.config.range;
-
-    if (range.signal) {
-      return scope.signalRef(range.signal);
-    } else if (isString(range)) {
-      if (config && config.hasOwnProperty(range)) {
-        spec = extend({}, spec, {range: config[range]});
-        return parseScaleRange(spec, scope, params);
-      } else if (range === 'width') {
-        range = [0, {signal: 'width'}];
-      } else if (range === 'height') {
-        range = isDiscrete(spec.type)
-          ? [0, {signal: 'height'}]
-          : [{signal: 'height'}, 0];
-      } else {
-        error('Unrecognized scale range value: ' + $(range));
-      }
-    } else if (range.scheme) {
-      params.scheme = isArray(range.scheme)
-        ? parseArray(range.scheme, scope)
-        : parseLiteral(range.scheme, scope);
-      if (range.extent) params.schemeExtent = parseArray(range.extent, scope);
-      if (range.count) params.schemeCount = parseLiteral(range.count, scope);
-      return;
-    } else if (range.step) {
-      params.rangeStep = parseLiteral(range.step, scope);
-      return;
-    } else if (isDiscrete(spec.type) && !isArray(range)) {
-      return parseScaleDomain(range, spec, scope);
-    } else if (!isArray(range)) {
-      error('Unsupported range type: ' + $(range));
-    }
-
-    return range.map(v => (isArray(v) ? parseArray : parseLiteral)(v, scope));
-  }
-
-  function parseProjection(proj, scope) {
-    var params = {};
-
-    for (var name in proj) {
-      if (name === 'name') continue;
-      params[name] = parseParameter$1(proj[name], name, scope);
-    }
-
-    scope.addProjection(proj.name, params);
-  }
-
-  function parseParameter$1(_, name, scope) {
-    return isArray(_) ? _.map(function(_) { return parseParameter$1(_, name, scope); })
-      : !isObject(_) ? _
-      : _.signal ? scope.signalRef(_.signal)
-      : name === 'fit' ? _
-      : error('Unsupported parameter object: ' + $(_));
-  }
-
-  const Top$1 = 'top';
-  const Left$1 = 'left';
-  const Right$1 = 'right';
-  const Bottom$1 = 'bottom';
-  const Center$1 = 'center';
-
-  const Vertical = 'vertical';
-
-  const Start$1 = 'start';
-  const Middle$1 = 'middle';
-  const End$1 = 'end';
-
-  const Index  = 'index';
-  const Label  = 'label';
-  const Offset = 'offset';
-  const Perc   = 'perc';
-  const Perc2  = 'perc2';
-  const Size   = 'size';
-  const Value  = 'value';
-
-  const GuideLabelStyle = 'guide-label';
-  const GuideTitleStyle = 'guide-title';
-  const GroupTitleStyle = 'group-title';
-
-  const Symbols$2 = 'symbol';
-  const Gradient$2 = 'gradient';
-  const Discrete$1 = 'discrete';
-
-  // Encoding channels supported by legends
-  // In priority order of 'canonical' scale
-  const LegendScales = [
-    'size',
-    'shape',
-    'fill',
-    'stroke',
-    'strokeWidth',
-    'strokeDash',
-    'opacity'
-  ];
-
-  const Skip$1 = {
-    name: 1,
-    interactive: 1
-  };
-
-  const zero$2 = {value: 0};
-  const one$2 = {value: 1};
-
-  var Skip$2 = toSet(['rule']),
-      Swap = toSet(['group', 'image', 'rect']);
-
-  function adjustSpatial(encode, marktype) {
-    var code = '';
-
-    if (Skip$2[marktype]) return code;
-
-    if (encode.x2) {
-      if (encode.x) {
-        if (Swap[marktype]) {
-          code += 'if(o.x>o.x2)$=o.x,o.x=o.x2,o.x2=$;';
-        }
-        code += 'o.width=o.x2-o.x;';
-      } else {
-        code += 'o.x=o.x2-(o.width||0);';
-      }
-    }
-
-    if (encode.xc) {
-      code += 'o.x=o.xc-(o.width||0)/2;';
-    }
-
-    if (encode.y2) {
-      if (encode.y) {
-        if (Swap[marktype]) {
-          code += 'if(o.y>o.y2)$=o.y,o.y=o.y2,o.y2=$;';
-        }
-        code += 'o.height=o.y2-o.y;';
-      } else {
-        code += 'o.y=o.y2-(o.height||0);';
-      }
-    }
-
-    if (encode.yc) {
-      code += 'o.y=o.yc-(o.height||0)/2;';
-    }
-
-    return code;
-  }
-
-  function color$2(enc, scope, params, fields) {
-    function color(type, x, y, z) {
-      var a = entry$1(null, x, scope, params, fields),
-          b = entry$1(null, y, scope, params, fields),
-          c = entry$1(null, z, scope, params, fields);
-      return 'this.' + type + '(' + [a, b, c].join(',') + ').toString()';
-    }
-
-    return (enc.c) ? color('hcl', enc.h, enc.c, enc.l)
-      : (enc.h || enc.s) ? color('hsl', enc.h, enc.s, enc.l)
-      : (enc.l || enc.a) ? color('lab', enc.l, enc.a, enc.b)
-      : (enc.r || enc.g || enc.b) ? color('rgb', enc.r, enc.g, enc.b)
-      : null;
-  }
-
-  function expression$1(code, scope, params, fields) {
-    var expr = parseExpression$1(code, scope);
-    expr.$fields.forEach(function(name) { fields[name] = 1; });
-    extend(params, expr.$params);
-    return expr.$expr;
-  }
-
-  function field$1(ref, scope, params, fields) {
-    return resolve$1(isObject(ref) ? ref : {datum: ref}, scope, params, fields);
-  }
-
-  function resolve$1(ref, scope, params, fields) {
-    var object, level, field;
-
-    if (ref.signal) {
-      object = 'datum';
-      field = expression$1(ref.signal, scope, params, fields);
-    } else if (ref.group || ref.parent) {
-      level = Math.max(1, ref.level || 1);
-      object = 'item';
-
-      while (level-- > 0) {
-        object += '.mark.group';
-      }
-
-      if (ref.parent) {
-        field = ref.parent;
-        object += '.datum';
-      } else {
-        field = ref.group;
-      }
-    } else if (ref.datum) {
-      object = 'datum';
-      field = ref.datum;
-    } else {
-      error('Invalid field reference: ' + $(ref));
-    }
-
-    if (!ref.signal) {
-      if (isString(field)) {
-        fields[field] = 1; // TODO review field tracking?
-        field = splitAccessPath(field).map($).join('][');
-      } else {
-        field = resolve$1(field, scope, params, fields);
-      }
-    }
-
-    return object + '[' + field + ']';
-  }
-
-  function scale$4(enc, value, scope, params, fields) {
-    var scale = getScale$1(enc.scale, scope, params, fields),
-        interp, func, flag;
-
-    if (enc.range != null) {
-      // pull value from scale range
-      interp = +enc.range;
-      func = scale + '.range()';
-      value = (interp === 0) ? (func + '[0]')
-        : '($=' + func + ',' + ((interp === 1) ? '$[$.length-1]'
-        : '$[0]+' + interp + '*($[$.length-1]-$[0])') + ')';
-    } else {
-      // run value through scale and/or pull scale bandwidth
-      if (value !== undefined) value = scale + '(' + value + ')';
-
-      if (enc.band && (flag = hasBandwidth(enc.scale, scope))) {
-        func = scale + '.bandwidth';
-        interp = +enc.band;
-        interp = func + '()' + (interp===1 ? '' : '*' + interp);
-
-        // if we don't know the scale type, check for bandwidth
-        if (flag < 0) interp = '(' + func + '?' + interp + ':0)';
-
-        value = (value ? value + '+' : '') + interp;
-
-        if (enc.extra) {
-          // include logic to handle extraneous elements
-          value = '(datum.extra?' + scale + '(datum.extra.value):' + value + ')';
-        }
-      }
-
-      if (value == null) value = '0';
-    }
-
-    return value;
-  }
-
-  function hasBandwidth(name, scope) {
-    if (!isString(name)) return -1;
-    var type = scope.scaleType(name);
-    return type === 'band' || type === 'point' ? 1 : 0;
-  }
-
-  function getScale$1(name, scope, params, fields) {
-    var scaleName;
-
-    if (isString(name)) {
-      // direct scale lookup; add scale as parameter
-      scaleName = ScalePrefix + name;
-      if (!params.hasOwnProperty(scaleName)) {
-        params[scaleName] = scope.scaleRef(name);
-      }
-      scaleName = $(scaleName);
-    } else {
-      // indirect scale lookup; add all scales as parameters
-      for (scaleName in scope.scales) {
-        params[ScalePrefix + scaleName] = scope.scaleRef(scaleName);
-      }
-      scaleName = $(ScalePrefix) + '+'
-        + (name.signal
-          ? '(' + expression$1(name.signal, scope, params, fields) + ')'
-          : field$1(name, scope, params, fields));
-    }
-
-    return '_[' + scaleName + ']';
-  }
-
-  function gradient$1(enc, scope, params, fields) {
-    return 'this.gradient('
-      + getScale$1(enc.gradient, scope, params, fields)
-      + ',' + $(enc.start)
-      + ',' + $(enc.stop)
-      + ',' + $(enc.count)
-      + ')';
-  }
-
-  function property(property, scope, params, fields) {
-    return isObject(property)
-        ? '(' + entry$1(null, property, scope, params, fields) + ')'
-        : property;
-  }
-
-  function entry$1(channel, enc, scope, params, fields) {
-    if (enc.gradient != null) {
-      return gradient$1(enc, scope, params, fields);
-    }
-
-    var value = enc.signal ? expression$1(enc.signal, scope, params, fields)
-      : enc.color ? color$2(enc.color, scope, params, fields)
-      : enc.field != null ? field$1(enc.field, scope, params, fields)
-      : enc.value !== undefined ? $(enc.value)
-      : undefined;
-
-    if (enc.scale != null) {
-      value = scale$4(enc, value, scope, params, fields);
-    }
-
-    if (value === undefined) {
-      value = null;
-    }
-
-    if (enc.exponent != null) {
-      value = 'Math.pow(' + value + ','
-        + property(enc.exponent, scope, params, fields) + ')';
-    }
-
-    if (enc.mult != null) {
-      value += '*' + property(enc.mult, scope, params, fields);
-    }
-
-    if (enc.offset != null) {
-      value += '+' + property(enc.offset, scope, params, fields);
-    }
-
-    if (enc.round) {
-      value = 'Math.round(' + value + ')';
-    }
-
-    return value;
-  }
-
-  function set$3(obj, key, value) {
-    const o = obj + '[' + $(key) + ']';
-    return `$=${value};if(${o}!==$)${o}=$,m=1;`;
-  }
-
-  function rule$1(channel, rules, scope, params, fields) {
-    var code = '';
-
-    rules.forEach(function(rule) {
-      var value = entry$1(channel, rule, scope, params, fields);
-      code += rule.test
-        ? expression$1(rule.test, scope, params, fields) + '?' + value + ':'
-        : value;
-    });
-
-    // if no else clause, terminate with null (vega/vega#1366)
-    if (peek(code) === ':') {
-      code += 'null';
-    }
-
-    return set$3('o', channel, code);
-  }
-
-  function parseEncode(encode, marktype, params, scope) {
-    var fields = {},
-        code = 'var o=item,datum=o.datum,m=0,$;',
-        channel, enc, value;
-
-    for (channel in encode) {
-      enc = encode[channel];
-      if (isArray(enc)) { // rule
-        code += rule$1(channel, enc, scope, params, fields);
-      } else {
-        value = entry$1(channel, enc, scope, params, fields);
-        code += set$3('o', channel, value);
-      }
-    }
-
-    code += adjustSpatial(encode, marktype);
-    code += 'return m;';
-
-    return {
-      $expr:   code,
-      $fields: Object.keys(fields),
-      $output: Object.keys(encode)
-    };
-  }
-
-  var MarkRole = 'mark';
-  var FrameRole$1 = 'frame';
-  var ScopeRole$1 = 'scope';
-
-  var AxisRole$1 = 'axis';
-  var AxisDomainRole = 'axis-domain';
-  var AxisGridRole = 'axis-grid';
-  var AxisLabelRole = 'axis-label';
-  var AxisTickRole = 'axis-tick';
-  var AxisTitleRole = 'axis-title';
-
-  var LegendRole$1 = 'legend';
-  var LegendBandRole = 'legend-band';
-  var LegendEntryRole = 'legend-entry';
-  var LegendGradientRole = 'legend-gradient';
-  var LegendLabelRole = 'legend-label';
-  var LegendSymbolRole = 'legend-symbol';
-  var LegendTitleRole = 'legend-title';
-
-  var TitleRole$1 = 'title';
-
-  function encoder(_) {
-    return isObject(_) ? extend({}, _) : {value: _};
-  }
-
-  function addEncode(object, name, value, set) {
-    if (value != null) {
-      if (isObject(value) && !isArray(value)) {
-        object.update[name] = value;
-      } else {
-        object[set || 'enter'][name] = {value: value};
-      }
-      return 1;
-    } else {
-      return 0;
-    }
-  }
-
-  function addEncoders(object, enter, update) {
-    for (let name in enter) {
-      addEncode(object, name, enter[name]);
-    }
-    for (let name in update) {
-      addEncode(object, name, update[name], 'update');
-    }
-  }
-
-  function extendEncode(encode, extra, skip) {
-    for (var name in extra) {
-      if (skip && skip.hasOwnProperty(name)) continue;
-      encode[name] = extend(encode[name] || {}, extra[name]);
-    }
-    return encode;
-  }
-
-  function encoders(encode, type, role, style, scope, params) {
-    var enc, key;
-    params = params || {};
-    params.encoders = {$encode: (enc = {})};
-
-    encode = applyDefaults(encode, type, role, style, scope.config);
-
-    for (key in encode) {
-      enc[key] = parseEncode(encode[key], type, params, scope);
-    }
-
-    return params;
-  }
-
-  function applyDefaults(encode, type, role, style, config) {
-    var enter = {}, key, skip, props;
-
-    // ignore legend and axis
-    if (role == 'legend' || String(role).indexOf('axis') === 0) {
-      role = null;
-    }
-
-    // resolve mark config
-    props = role === FrameRole$1 ? config.group
-      : (role === MarkRole) ? extend({}, config.mark, config[type])
-      : null;
-
-    for (key in props) {
-      // do not apply defaults if relevant fields are defined
-      skip = has(key, encode)
-        || (key === 'fill' || key === 'stroke')
-        && (has('fill', encode) || has('stroke', encode));
-
-      if (!skip) enter[key] = defaultEncode(props[key]);
-    }
-
-    // resolve styles, apply with increasing precedence
-    array(style).forEach(function(name) {
-      var props = config.style && config.style[name];
-      for (var key in props) {
-        if (!has(key, encode)) {
-          enter[key] = defaultEncode(props[key]);
-        }
-      }
-    });
-
-    encode = extend({}, encode); // defensive copy
-    encode.enter = extend(enter, encode.enter);
-
-    return encode;
-  }
-
-  function defaultEncode(value) {
-    return value && value.signal
-      ? {signal: value.signal}
-      : {value: value};
-  }
-
-  function has(key, encode) {
-    return encode && (
-      (encode.enter && encode.enter[key]) ||
-      (encode.update && encode.update[key])
-    );
-  }
-
-  function guideMark(type, role, style, key, dataRef, encode, extras) {
-    return {
-      type:  type,
-      name:  extras ? extras.name : undefined,
-      role:  role,
-      style: (extras && extras.style) || style,
-      key:   key,
-      from:  dataRef,
-      interactive: !!(extras && extras.interactive),
-      encode: extendEncode(encode, extras, Skip$1)
-    };
-  }
-
-  function lookup$5(spec, config) {
-    const _ = name => value(spec[name], config[name]);
-
-    _.isVertical = s => Vertical === value(
-      spec.direction,
-      config.direction || (s ? config.symbolDirection : config.gradientDirection)
-    );
-
-    _.gradientLength = () => value(
-      spec.gradientLength,
-      config.gradientLength || config.gradientWidth
-    );
-
-    _.gradientThickness = () => value(
-      spec.gradientThickness,
-      config.gradientThickness || config.gradientHeight
-    );
-
-    _.entryColumns = () => value(
-      spec.columns,
-      value(config.columns, +_.isVertical(true))
-    );
-
-    return _;
-  }
-
-  function getEncoding(name, encode) {
-    var v = encode && (
-      (encode.update && encode.update[name]) ||
-      (encode.enter && encode.enter[name])
-    );
-    return v && v.signal ? v : v ? v.value : null;
-  }
-
-  function getStyle(name, scope, style) {
-    var s = scope.config.style[style];
-    return s && s[name];
-  }
-
-  function anchorExpr(s, e, m) {
-    return `item.anchor === "${Start$1}" ? ${s} : item.anchor === "${End$1}" ? ${e} : ${m}`;
-  }
-
-  const alignExpr = anchorExpr(
-    $(Left$1),
-    $(Right$1),
-    $(Center$1)
-  );
-
-  var GroupMark = 'group';
-  var RectMark = 'rect';
-  var RuleMark = 'rule';
-  var SymbolMark = 'symbol';
-  var TextMark = 'text';
-
-  function legendGradient(spec, scale, config, userEncode) {
-    var _ = lookup$5(spec, config),
-        vertical = _.isVertical(),
-        thickness = _.gradientThickness(),
-        length = _.gradientLength(),
-        encode, enter, start, stop, width, height;
-
-    if (vertical) {
-      start = [0, 1];
-      stop = [0, 0];
-      width = thickness;
-      height = length;
-    } else {
-      start = [0, 0];
-      stop = [1, 0];
-      width = length;
-      height = thickness;
-    }
-
-    encode = {
-      enter: enter = {
-        opacity: zero$2,
-        x: zero$2,
-        y: zero$2,
-        width: encoder(width),
-        height: encoder(height)
-      },
-      update: extend({}, enter, {
-        opacity: one$2,
-        fill: {gradient: scale, start: start, stop: stop}
-      }),
-      exit: {
-        opacity: zero$2
-      }
-    };
-
-    addEncoders(encode, {
-      stroke:      _('gradientStrokeColor'),
-      strokeWidth: _('gradientStrokeWidth')
-    }, { // update
-      opacity:     _('gradientOpacity')
-    });
-
-    return guideMark(RectMark, LegendGradientRole, null, undefined, undefined, encode, userEncode);
-  }
-
-  function legendGradientDiscrete(spec, scale, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config),
-        vertical = _.isVertical(),
-        thickness = _.gradientThickness(),
-        length = _.gradientLength(),
-        encode, enter, u, v, uu, vv, adjust = '';
-
-    vertical
-      ? (u = 'y', uu = 'y2', v = 'x', vv = 'width', adjust = '1-')
-      : (u = 'x', uu = 'x2', v = 'y', vv = 'height');
-
-    enter = {
-      opacity: zero$2,
-      fill: {scale: scale, field: Value}
-    };
-    enter[u]  = {signal: adjust + 'datum.' + Perc, mult: length};
-    enter[v]  = zero$2;
-    enter[uu] = {signal: adjust + 'datum.' + Perc2, mult: length};
-    enter[vv] = encoder(thickness);
-
-    encode = {
-      enter: enter,
-      update: extend({}, enter, {opacity: one$2}),
-      exit: {opacity: zero$2}
-    };
-
-    addEncoders(encode, {
-      stroke:      _('gradientStrokeColor'),
-      strokeWidth: _('gradientStrokeWidth')
-    }, { // update
-      opacity:     _('gradientOpacity')
-    });
-
-    return guideMark(RectMark, LegendBandRole, null, Value, dataRef, encode, userEncode);
-  }
-
-  const alignExpr$1 = `datum.${Perc}<=0?"${Left$1}":datum.${Perc}>=1?"${Right$1}":"${Center$1}"`,
-        baselineExpr = `datum.${Perc}<=0?"${Bottom$1}":datum.${Perc}>=1?"${Top$1}":"${Middle$1}"`;
-
-  function legendGradientLabels(spec, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config),
-        vertical = _.isVertical(),
-        thickness = encoder(_.gradientThickness()),
-        length = _.gradientLength(),
-        overlap = _('labelOverlap'),
-        separation = _('labelSeparation'),
-        encode, enter, update, u, v, adjust = '';
-
-    encode = {
-      enter: enter = {
-        opacity: zero$2
-      },
-      update: update = {
-        opacity: one$2,
-        text: {field: Label}
-      },
-      exit: {
-        opacity: zero$2
-      }
-    };
-
-    addEncoders(encode, {
-      fill:        _('labelColor'),
-      fillOpacity: _('labelOpacity'),
-      font:        _('labelFont'),
-      fontSize:    _('labelFontSize'),
-      fontStyle:   _('labelFontStyle'),
-      fontWeight:  _('labelFontWeight'),
-      limit:       value(spec.labelLimit, config.gradientLabelLimit)
-    });
-
-    if (vertical) {
-      enter.align = {value: 'left'};
-      enter.baseline = update.baseline = {signal: baselineExpr};
-      u = 'y'; v = 'x'; adjust = '1-';
-    } else {
-      enter.align = update.align = {signal: alignExpr$1};
-      enter.baseline = {value: 'top'};
-      u = 'x'; v = 'y';
-    }
-
-    enter[u] = update[u] = {signal: adjust + 'datum.' + Perc, mult: length};
-
-    enter[v] = update[v] = thickness;
-    thickness.offset = value(spec.labelOffset, config.gradientLabelOffset) || 0;
-
-    spec = guideMark(TextMark, LegendLabelRole, GuideLabelStyle, Value, dataRef, encode, userEncode);
-    if (overlap) {
-      spec.overlap = {
-        separation: separation,
-        method: overlap,
-        order: 'datum.' + Index
-      };
-    }
-    return spec;
-  }
-
-  function guideGroup(role, style, name, dataRef, interactive, encode, marks, layout) {
-    return {
-      type: GroupMark,
-      name: name,
-      role: role,
-      style: style,
-      from: dataRef,
-      interactive: interactive || false,
-      encode: encode,
-      marks: marks,
-      layout: layout
-    };
-  }
-
-  // userEncode is top-level, includes entries, symbols, labels
-  function legendSymbolGroups(spec, config, userEncode, dataRef, columns) {
-    var _ = lookup$5(spec, config),
-        entries = userEncode.entries,
-        interactive = !!(entries && entries.interactive),
-        name = entries ? entries.name : undefined,
-        height = _('clipHeight'),
-        symbolOffset = _('symbolOffset'),
-        valueRef = {data: 'value'},
-        encode = {},
-        xSignal = `${columns} ? datum.${Offset} : datum.${Size}`,
-        yEncode = height ? encoder(height) : {field: Size},
-        index = `datum.${Index}`,
-        ncols = `max(1, ${columns})`,
-        enter, update, labelOffset, symbols, labels, nrows, sort;
-
-    yEncode.mult = 0.5;
-
-    // -- LEGEND SYMBOLS --
-    encode = {
-      enter:  enter = {
-        opacity: zero$2,
-        x: {signal: xSignal, mult: 0.5, offset: symbolOffset},
-        y: yEncode
-      },
-      update: update = {
-        opacity: one$2,
-        x: enter.x,
-        y: enter.y
-      },
-      exit: {
-        opacity: zero$2
-      }
-    };
-
-    if (!spec.fill) {
-      addEncoders(encode, {
-        fill:   config.symbolBaseFillColor,
-        stroke: config.symbolBaseStrokeColor
-      });
-    }
-
-    addEncoders(encode, {
-      fill:             _('symbolFillColor'),
-      shape:            _('symbolType'),
-      size:             _('symbolSize'),
-      stroke:           _('symbolStrokeColor'),
-      strokeDash:       _('symbolDash'),
-      strokeDashOffset: _('symbolDashOffset'),
-      strokeWidth:      _('symbolStrokeWidth')
-    }, { // update
-      opacity:          _('symbolOpacity')
-    });
-
-    LegendScales.forEach(function(scale) {
-      if (spec[scale]) {
-        update[scale] = enter[scale] = {scale: spec[scale], field: Value};
-      }
-    });
-
-    symbols = guideMark(
-      SymbolMark, LegendSymbolRole, null,
-      Value, valueRef, encode, userEncode.symbols
-    );
-    if (height) symbols.clip = true;
-
-    // -- LEGEND LABELS --
-    labelOffset = encoder(symbolOffset);
-    labelOffset.offset = _('labelOffset');
-
-    encode = {
-      enter:  enter = {
-        opacity: zero$2,
-        x: {signal: xSignal, offset: labelOffset},
-        y: yEncode
-      },
-      update: update = {
-        opacity: one$2,
-        text: {field: Label},
-        x: enter.x,
-        y: enter.y
-      },
-      exit: {
-        opacity: zero$2
-      }
-    };
-
-    addEncoders(encode, {
-      align:       _('labelAlign'),
-      baseline:    _('labelBaseline'),
-      fill:        _('labelColor'),
-      fillOpacity: _('labelOpacity'),
-      font:        _('labelFont'),
-      fontSize:    _('labelFontSize'),
-      fontStyle:   _('labelFontStyle'),
-      fontWeight:  _('labelFontWeight'),
-      limit:       _('labelLimit')
-    });
-
-    labels = guideMark(
-      TextMark, LegendLabelRole, GuideLabelStyle,
-      Value, valueRef, encode, userEncode.labels
-    );
-
-    // -- LEGEND ENTRY GROUPS --
-    encode = {
-      enter: {
-        noBound: {value: !height}, // ignore width/height in bounds calc
-        width: zero$2,
-        height: height ? encoder(height) : zero$2,
-        opacity: zero$2
-      },
-      exit: {opacity: zero$2},
-      update: update = {
-        opacity: one$2,
-        row: {signal: null},
-        column: {signal: null}
-      }
-    };
-
-    // annotate and sort groups to ensure correct ordering
-    if (_.isVertical(true)) {
-      nrows = `ceil(item.mark.items.length / ${ncols})`;
-      update.row.signal = `${index}%${nrows}`;
-      update.column.signal = `floor(${index} / ${nrows})`;
-      sort = {field: ['row', index]};
-    } else {
-      update.row.signal = `floor(${index} / ${ncols})`;
-      update.column.signal = `${index} % ${ncols}`;
-      sort = {field: index};
-    }
-    // handle zero column case (implies infinite columns)
-    update.column.signal = `${columns}?${update.column.signal}:${index}`;
-
-    // facet legend entries into sub-groups
-    dataRef = {facet: {data: dataRef, name: 'value', groupby: Index}};
-
-    spec = guideGroup(
-      ScopeRole$1, null, name, dataRef, interactive,
-      extendEncode(encode, entries, Skip$1), [symbols, labels]
-    );
-    spec.sort = sort;
-    return spec;
-  }
-
-  function legendSymbolLayout(spec, config) {
-    const _ = lookup$5(spec, config);
-
-    // layout parameters for legend entries
-    return {
-      align:   _('gridAlign'),
-      columns: _.entryColumns(),
-      center:  {
-        row: true,
-        column: false
-      },
-      padding: {
-        row:    _('rowPadding'),
-        column: _('columnPadding')
-      }
-    };
-  }
-
-  // expression logic for align, anchor, angle, and baseline calculation
-  const isL = 'item.orient === "left"',
-        isR = 'item.orient === "right"',
-        isLR = `(${isL} || ${isR})`,
-        isVG = `datum.vgrad && ${isLR}`,
-        baseline = anchorExpr('"top"', '"bottom"', '"middle"'),
-        alignFlip = anchorExpr('"right"', '"left"', '"center"'),
-        exprAlign = `datum.vgrad && ${isR} ? (${alignFlip}) : (${isLR} && !(datum.vgrad && ${isL})) ? "left" : ${alignExpr}`,
-        exprAnchor = `item._anchor || (${isLR} ? "middle" : "start")`,
-        exprAngle = `${isVG} ? (${isL} ? -90 : 90) : 0`,
-        exprBaseline = `${isLR} ? (datum.vgrad ? (${isR} ? "bottom" : "top") : ${baseline}) : "top"`;
-
-  function legendTitle(spec, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config), encode;
-
-    encode = {
-      enter: {opacity: zero$2},
-      update: {
-        opacity: one$2,
-        x: {field: {group: 'padding'}},
-        y: {field: {group: 'padding'}}
-      },
-      exit: {opacity: zero$2}
-    };
-
-    addEncoders(encode, {
-      orient:      _('titleOrient'),
-      _anchor:     _('titleAnchor'),
-      anchor:      {signal: exprAnchor},
-      angle:       {signal: exprAngle},
-      align:       {signal: exprAlign},
-      baseline:    {signal: exprBaseline},
-      text:        spec.title,
-      fill:        _('titleColor'),
-      fillOpacity: _('titleOpacity'),
-      font:        _('titleFont'),
-      fontSize:    _('titleFontSize'),
-      fontStyle:   _('titleFontStyle'),
-      fontWeight:  _('titleFontWeight'),
-      limit:       _('titleLimit')
-    }, { // require update
-      align:       _('titleAlign'),
-      baseline:    _('titleBaseline'),
-    });
-
-    return guideMark(TextMark, LegendTitleRole, GuideTitleStyle, null, dataRef, encode, userEncode);
-  }
-
-  function clip$3(clip, scope) {
-    var expr;
-
-    if (isObject(clip)) {
-      if (clip.signal) {
-        expr = clip.signal;
-      } else if (clip.path) {
-        expr = 'pathShape(' + param(clip.path) + ')';
-      } else if (clip.sphere) {
-        expr = 'geoShape(' + param(clip.sphere) + ', {type: "Sphere"})';
-      }
-    }
-
-    return expr
-      ? scope.signalRef(expr)
-      : !!clip;
-  }
-
-  function param(value) {
-    return isObject(value) && value.signal
-      ? value.signal
-      : $(value);
-  }
-
-  function getRole(spec) {
-    var role = spec.role || '';
-    return (!role.indexOf('axis') || !role.indexOf('legend'))
-      ? role
-      : spec.type === GroupMark ? ScopeRole$1 : (role || MarkRole);
-  }
-
-  function definition$1(spec) {
-    return {
-      marktype:    spec.type,
-      name:        spec.name || undefined,
-      role:        spec.role || getRole(spec),
-      zindex:      +spec.zindex || undefined
-    };
-  }
-
-  function interactive(spec, scope) {
-    return spec && spec.signal ? scope.signalRef(spec.signal)
-      : spec === false ? false
-      : true;
-  }
-
-  /**
-   * Parse a data transform specification.
-   */
-  function parseTransform(spec, scope) {
-    var def = definition(spec.type);
-    if (!def) error('Unrecognized transform type: ' + $(spec.type));
-
-    var t = entry(def.type.toLowerCase(), null, parseParameters$1(def, spec, scope));
-    if (spec.signal) scope.addSignal(spec.signal, scope.proxy(t));
-    t.metadata = def.metadata || {};
-
-    return t;
-  }
-
-  /**
-   * Parse all parameters of a data transform.
-   */
-  function parseParameters$1(def, spec, scope) {
-    var params = {}, pdef, i, n;
-    for (i=0, n=def.params.length; i<n; ++i) {
-      pdef = def.params[i];
-      params[pdef.name] = parseParameter$2(pdef, spec, scope);
-    }
-    return params;
-  }
-
-  /**
-   * Parse a data transform parameter.
-   */
-  function parseParameter$2(def, spec, scope) {
-    var type = def.type,
-        value = spec[def.name];
-
-    if (type === 'index') {
-      return parseIndexParameter(def, spec, scope);
-    } else if (value === undefined) {
-      if (def.required) {
-        error('Missing required ' + $(spec.type)
-            + ' parameter: ' + $(def.name));
-      }
-      return;
-    } else if (type === 'param') {
-      return parseSubParameters(def, spec, scope);
-    } else if (type === 'projection') {
-      return scope.projectionRef(spec[def.name]);
-    }
-
-    return def.array && !isSignal(value)
-      ? value.map(function(v) { return parameterValue(def, v, scope); })
-      : parameterValue(def, value, scope);
-  }
-
-  /**
-   * Parse a single parameter value.
-   */
-  function parameterValue(def, value, scope) {
-    var type = def.type;
-
-    if (isSignal(value)) {
-      return isExpr$1(type) ? error('Expression references can not be signals.')
-           : isField(type) ? scope.fieldRef(value)
-           : isCompare(type) ? scope.compareRef(value)
-           : scope.signalRef(value.signal);
-    } else {
-      var expr = def.expr || isField(type);
-      return expr && outerExpr(value) ? scope.exprRef(value.expr, value.as)
-           : expr && outerField(value) ? fieldRef(value.field, value.as)
-           : isExpr$1(type) ? parseExpression$1(value, scope)
-           : isData(type) ? ref(scope.getData(value).values)
-           : isField(type) ? fieldRef(value)
-           : isCompare(type) ? scope.compareRef(value)
-           : value;
-    }
-  }
-
-  /**
-   * Parse parameter for accessing an index of another data set.
-   */
-  function parseIndexParameter(def, spec, scope) {
-    if (!isString(spec.from)) {
-      error('Lookup "from" parameter must be a string literal.');
-    }
-    return scope.getData(spec.from).lookupRef(scope, spec.key);
-  }
-
-  /**
-   * Parse a parameter that contains one or more sub-parameter objects.
-   */
-  function parseSubParameters(def, spec, scope) {
-    var value = spec[def.name];
-
-    if (def.array) {
-      if (!isArray(value)) { // signals not allowed!
-        error('Expected an array of sub-parameters. Instead: ' + $(value));
-      }
-      return value.map(function(v) {
-        return parseSubParameter(def, v, scope);
-      });
-    } else {
-      return parseSubParameter(def, value, scope);
-    }
-  }
-
-  /**
-   * Parse a sub-parameter object.
-   */
-  function parseSubParameter(def, value, scope) {
-    var params, pdef, k, i, n;
-
-    // loop over defs to find matching key
-    for (i=0, n=def.params.length; i<n; ++i) {
-      pdef = def.params[i];
-      for (k in pdef.key) {
-        if (pdef.key[k] !== value[k]) { pdef = null; break; }
-      }
-      if (pdef) break;
-    }
-    // raise error if matching key not found
-    if (!pdef) error('Unsupported parameter: ' + $(value));
-
-    // parse params, create Params transform, return ref
-    params = extend(parseParameters$1(pdef, value, scope), pdef.key);
-    return ref(scope.add(Params$2(params)));
-  }
-
-  // -- Utilities -----
-
-  function outerExpr(_) {
-    return _ && _.expr;
-  }
-
-  function outerField(_) {
-    return _ && _.field;
-  }
-
-  function isData(_) {
-    return _ === 'data';
-  }
-
-  function isExpr$1(_) {
-    return _ === 'expr';
-  }
-
-  function isField(_) {
-    return _ === 'field';
-  }
-
-  function isCompare(_) {
-    return _ === 'compare'
-  }
-
-  function parseData(from, group, scope) {
-    var facet, key, op, dataRef, parent;
-
-    // if no source data, generate singleton datum
-    if (!from) {
-      dataRef = ref(scope.add(Collect$1(null, [{}])));
-    }
-
-    // if faceted, process facet specification
-    else if (facet = from.facet) {
-      if (!group) error('Only group marks can be faceted.');
-
-      // use pre-faceted source data, if available
-      if (facet.field != null) {
-        dataRef = parent = getDataRef(facet, scope);
-      } else {
-        // generate facet aggregates if no direct data specification
-        if (!from.data) {
-          op = parseTransform(extend({
-            type:    'aggregate',
-            groupby: array(facet.groupby)
-          }, facet.aggregate), scope);
-          op.params.key = scope.keyRef(facet.groupby);
-          op.params.pulse = getDataRef(facet, scope);
-          dataRef = parent = ref(scope.add(op));
-        } else {
-          parent = ref(scope.getData(from.data).aggregate);
-        }
-
-        key = scope.keyRef(facet.groupby, true);
-      }
-    }
-
-    // if not yet defined, get source data reference
-    if (!dataRef) {
-      dataRef = getDataRef(from, scope);
-    }
-
-    return {
-      key: key,
-      pulse: dataRef,
-      parent: parent
-    };
-  }
-
-  function getDataRef(from, scope) {
-    return from.$ref ? from
-      : from.data && from.data.$ref ? from.data
-      : ref(scope.getData(from.data).output);
-  }
-
-  function DataScope(scope, input, output, values, aggr) {
-    this.scope = scope;   // parent scope object
-    this.input = input;   // first operator in pipeline (tuple input)
-    this.output = output; // last operator in pipeline (tuple output)
-    this.values = values; // operator for accessing tuples (but not tuple flow)
-
-    // last aggregate in transform pipeline
-    this.aggregate = aggr;
-
-    // lookup table of field indices
-    this.index = {};
-  }
-
-  DataScope.fromEntries = function(scope, entries) {
-    var n = entries.length,
-        i = 1,
-        input  = entries[0],
-        values = entries[n-1],
-        output = entries[n-2],
-        aggr = null;
-
-    if (input && input.type === 'load') {
-      input = entries[1];
-    }
-
-    // add operator entries to this scope, wire up pulse chain
-    scope.add(entries[0]);
-    for (; i<n; ++i) {
-      entries[i].params.pulse = ref(entries[i-1]);
-      scope.add(entries[i]);
-      if (entries[i].type === 'aggregate') aggr = entries[i];
-    }
-
-    return new DataScope(scope, input, output, values, aggr);
-  };
-
-  var prototype$1n = DataScope.prototype;
-
-  prototype$1n.countsRef = function(scope, field, sort) {
-    var ds = this,
-        cache = ds.counts || (ds.counts = {}),
-        k = fieldKey(field), v, a, p;
-
-    if (k != null) {
-      scope = ds.scope;
-      v = cache[k];
-    }
-
-    if (!v) {
-      p = {
-        groupby: scope.fieldRef(field, 'key'),
-        pulse: ref(ds.output)
-      };
-      if (sort && sort.field) addSortField(scope, p, sort);
-      a = scope.add(Aggregate$1(p));
-      v = scope.add(Collect$1({pulse: ref(a)}));
-      v = {agg: a, ref: ref(v)};
-      if (k != null) cache[k] = v;
-    } else if (sort && sort.field) {
-      addSortField(scope, v.agg.params, sort);
-    }
-
-    return v.ref;
-  };
-
-  function fieldKey(field) {
-    return isString(field) ? field : null;
-  }
-
-  function addSortField(scope, p, sort) {
-    var as = aggrField(sort.op, sort.field), s;
-
-    if (p.ops) {
-      for (var i=0, n=p.as.length; i<n; ++i) {
-        if (p.as[i] === as) return;
-      }
-    } else {
-      p.ops = ['count'];
-      p.fields = [null];
-      p.as = ['count'];
-    }
-    if (sort.op) {
-      p.ops.push((s=sort.op.signal) ? scope.signalRef(s) : sort.op);
-      p.fields.push(scope.fieldRef(sort.field));
-      p.as.push(as);
-    }
-  }
-
-  function cache(scope, ds, name, optype, field, counts, index) {
-    var cache = ds[name] || (ds[name] = {}),
-        sort = sortKey(counts),
-        k = fieldKey(field), v, op;
-
-    if (k != null) {
-      scope = ds.scope;
-      k = k + (sort ? '|' + sort : '');
-      v = cache[k];
-    }
-
-    if (!v) {
-      var params = counts
-        ? {field: keyFieldRef, pulse: ds.countsRef(scope, field, counts)}
-        : {field: scope.fieldRef(field), pulse: ref(ds.output)};
-      if (sort) params.sort = scope.sortRef(counts);
-      op = scope.add(entry(optype, undefined, params));
-      if (index) ds.index[field] = op;
-      v = ref(op);
-      if (k != null) cache[k] = v;
-    }
-    return v;
-  }
-
-  prototype$1n.tuplesRef = function() {
-    return ref(this.values);
-  };
-
-  prototype$1n.extentRef = function(scope, field) {
-    return cache(scope, this, 'extent', 'extent', field, false);
-  };
-
-  prototype$1n.domainRef = function(scope, field) {
-    return cache(scope, this, 'domain', 'values', field, false);
-  };
-
-  prototype$1n.valuesRef = function(scope, field, sort) {
-    return cache(scope, this, 'vals', 'values', field, sort || true);
-  };
-
-  prototype$1n.lookupRef = function(scope, field) {
-    return cache(scope, this, 'lookup', 'tupleindex', field, false);
-  };
-
-  prototype$1n.indataRef = function(scope, field) {
-    return cache(scope, this, 'indata', 'tupleindex', field, true, true);
-  };
-
-  function parseFacet(spec, scope, group) {
-    var facet = spec.from.facet,
-        name = facet.name,
-        data = getDataRef(facet, scope),
-        subscope, source, values, op;
-
-    if (!facet.name) {
-      error('Facet must have a name: ' + $(facet));
-    }
-    if (!facet.data) {
-      error('Facet must reference a data set: ' + $(facet));
-    }
-
-    if (facet.field) {
-      op = scope.add(PreFacet$1({
-        field: scope.fieldRef(facet.field),
-        pulse: data
-      }));
-    } else if (facet.groupby) {
-      op = scope.add(Facet$1({
-        key:   scope.keyRef(facet.groupby),
-        group: ref(scope.proxy(group.parent)),
-        pulse: data
-      }));
-    } else {
-      error('Facet must specify groupby or field: ' + $(facet));
-    }
-
-    // initialize facet subscope
-    subscope = scope.fork();
-    source = subscope.add(Collect$1());
-    values = subscope.add(Sieve$1({pulse: ref(source)}));
-    subscope.addData(name, new DataScope(subscope, source, source, values));
-    subscope.addSignal('parent', null);
-
-    // parse faceted subflow
-    op.params.subflow = {
-      $subflow: parseSpec(spec, subscope).toRuntime()
-    };
-  }
-
-  function parseSubflow(spec, scope, input) {
-    var op = scope.add(PreFacet$1({pulse: input.pulse})),
-        subscope = scope.fork();
-
-    subscope.add(Sieve$1());
-    subscope.addSignal('parent', null);
-
-    // parse group mark subflow
-    op.params.subflow = {
-      $subflow: parseSpec(spec, subscope).toRuntime()
-    };
-  }
-
-  function parseTrigger(spec, scope, name) {
-    var remove = spec.remove,
-        insert = spec.insert,
-        toggle = spec.toggle,
-        modify = spec.modify,
-        values = spec.values,
-        op = scope.add(operator()),
-        update, expr;
-
-    update = 'if(' + spec.trigger + ',modify("'
-      + name + '",'
-      + [insert, remove, toggle, modify, values]
-          .map(function(_) { return _ == null ? 'null' : _; })
-          .join(',')
-      + '),0)';
-
-    expr = parseExpression$1(update, scope);
-    op.update = expr.$expr;
-    op.params = expr.$params;
-  }
-
-  function parseMark(spec, scope) {
-    var role = getRole(spec),
-        group = spec.type === GroupMark,
-        facet = spec.from && spec.from.facet,
-        layout = spec.layout || role === ScopeRole$1 || role === FrameRole$1,
-        nested = role === MarkRole || layout || facet,
-        overlap = spec.overlap,
-        ops, op, input, store, enc, bound, render, sieve, name,
-        joinRef, markRef, encodeRef, layoutRef, boundRef;
-
-    // resolve input data
-    input = parseData(spec.from, group, scope);
-
-    // data join to map tuples to visual items
-    op = scope.add(DataJoin$1({
-      key:   input.key || (spec.key ? fieldRef(spec.key) : undefined),
-      pulse: input.pulse,
-      clean: !group
-    }));
-    joinRef = ref(op);
-
-    // collect visual items
-    op = store = scope.add(Collect$1({pulse: joinRef}));
-
-    // connect visual items to scenegraph
-    op = scope.add(Mark$1({
-      markdef:     definition$1(spec),
-      interactive: interactive(spec.interactive, scope),
-      clip:        clip$3(spec.clip, scope),
-      context:     {$context: true},
-      groups:      scope.lookup(),
-      parent:      scope.signals.parent ? scope.signalRef('parent') : null,
-      index:       scope.markpath(),
-      pulse:       ref(op)
-    }));
-    markRef = ref(op);
-
-    // add visual encoders
-    op = enc = scope.add(Encode$1(encoders(
-      spec.encode, spec.type, role, spec.style, scope,
-      {mod: false, pulse: markRef}
-    )));
-
-    // monitor parent marks to propagate changes
-    op.params.parent = scope.encode();
-
-    // add post-encoding transforms, if defined
-    if (spec.transform) {
-      spec.transform.forEach(function(_) {
-        const tx = parseTransform(_, scope),
-              md = tx.metadata;
-        if (md.generates || md.changes) {
-          error('Mark transforms should not generate new data.');
-        }
-        if (!md.nomod) enc.params.mod = true; // update encode mod handling
-        tx.params.pulse = ref(op);
-        scope.add(op = tx);
-      });
-    }
-
-    // if item sort specified, perform post-encoding
-    if (spec.sort) {
-      op = scope.add(SortItems$1({
-        sort:  scope.compareRef(spec.sort, true), // stable sort
-        pulse: ref(op)
-      }));
-    }
-
-    encodeRef = ref(op);
-
-    // add view layout operator if needed
-    if (facet || layout) {
-      layout = scope.add(ViewLayout$1({
-        layout:   scope.objectProperty(spec.layout),
-        legends:  scope.legends,
-        mark:     markRef,
-        pulse:    encodeRef
-      }));
-      layoutRef = ref(layout);
-    }
-
-    // compute bounding boxes
-    bound = scope.add(Bound$1({mark: markRef, pulse: layoutRef || encodeRef}));
-    boundRef = ref(bound);
-
-    // if group mark, recurse to parse nested content
-    if (group) {
-      // juggle layout & bounds to ensure they run *after* any faceting transforms
-      if (nested) { ops = scope.operators; ops.pop(); if (layout) ops.pop(); }
-
-      scope.pushState(encodeRef, layoutRef || boundRef, joinRef);
-      facet ? parseFacet(spec, scope, input)          // explicit facet
-          : nested ? parseSubflow(spec, scope, input) // standard mark group
-          : parseSpec(spec, scope); // guide group, we can avoid nested scopes
-      scope.popState();
-
-      if (nested) { if (layout) ops.push(layout); ops.push(bound); }
-    }
-
-    // if requested, add overlap removal transform
-    if (overlap) {
-      boundRef = parseOverlap(overlap, boundRef, scope);
-    }
-
-    // render / sieve items
-    render = scope.add(Render$1({pulse: boundRef}));
-    sieve = scope.add(Sieve$1({pulse: ref(render)}, undefined, scope.parent()));
-
-    // if mark is named, make accessible as reactive geometry
-    // add trigger updates if defined
-    if (spec.name != null) {
-      name = spec.name;
-      scope.addData(name, new DataScope(scope, store, render, sieve));
-      if (spec.on) spec.on.forEach(function(on) {
-        if (on.insert || on.remove || on.toggle) {
-          error('Marks only support modify triggers.');
-        }
-        parseTrigger(on, scope, name);
-      });
-    }
-  }
-
-  function parseOverlap(overlap, source, scope) {
-    var method = overlap.method,
-        bound = overlap.bound,
-        sep = overlap.separation, tol;
-
-    var params = {
-      separation: isSignal(sep) ? scope.signalRef(sep.signal) : sep,
-      method: isSignal(method) ? scope.signalRef(method.signal) : method,
-      pulse:  source
-    };
-
-    if (overlap.order) {
-      params.sort = scope.compareRef({field: overlap.order});
-    }
-
-    if (bound) {
-      tol = bound.tolerance;
-      params.boundTolerance = isSignal(tol) ? scope.signalRef(tol.signal) : +tol;
-      params.boundScale = scope.scaleRef(bound.scale);
-      params.boundOrient = bound.orient;
-    }
-
-    return ref(scope.add(Overlap$1(params)));
-  }
-
-  function parseLegend(spec, scope) {
-    var config = scope.config.legend,
-        encode = spec.encode || {},
-        legendEncode = encode.legend || {},
-        name = legendEncode.name || undefined,
-        interactive = legendEncode.interactive,
-        style = legendEncode.style,
-        _ = lookup$5(spec, config),
-        entryEncode, entryLayout, params, children,
-        type, datum, dataRef, entryRef, group;
-
-    // resolve 'canonical' scale name
-    var scale = LegendScales.reduce(function(a, b) { return a || spec[b]; }, 0);
-    if (!scale) error('Missing valid scale for legend.');
-
-    // resolve legend type (symbol, gradient, or discrete gradient)
-    type = legendType(spec, scope.scaleType(scale));
-
-    // single-element data source for legend group
-    datum = {
-      title:  spec.title != null,
-      type:   type,
-      vgrad:  type !== 'symbol' &&  _.isVertical()
-    };
-    dataRef = ref(scope.add(Collect$1(null, [datum])));
-
-    // encoding properties for legend group
-    legendEncode = extendEncode(
-      buildLegendEncode(_, config), legendEncode, Skip$1
-    );
-
-    // encoding properties for legend entry sub-group
-    entryEncode = {enter: {x: {value: 0}, y: {value: 0}}};
-
-    // data source for legend values
-    entryRef = ref(scope.add(LegendEntries$1(params = {
-      type:    type,
-      scale:   scope.scaleRef(scale),
-      count:   scope.objectProperty(spec.tickCount),
-      values:  scope.objectProperty(spec.values),
-      minstep: scope.property(spec.tickMinStep),
-      formatType: scope.property(spec.formatType),
-      formatSpecifier: scope.property(spec.format)
-    })));
-
-    // continuous gradient legend
-    if (type === Gradient$2) {
-      children = [
-        legendGradient(spec, scale, config, encode.gradient),
-        legendGradientLabels(spec, config, encode.labels, entryRef)
-      ];
-      // adjust default tick count based on the gradient length
-      params.count = params.count || scope.signalRef(
-        `max(2,2*floor((${deref(_.gradientLength())})/100))`
-      );
-    }
-
-    // discrete gradient legend
-    else if (type === Discrete$1) {
-      children = [
-        legendGradientDiscrete(spec, scale, config, encode.gradient, entryRef),
-        legendGradientLabels(spec, config, encode.labels, entryRef)
-      ];
-    }
-
-    // symbol legend
-    else {
-      // determine legend symbol group layout
-      entryLayout = legendSymbolLayout(spec, config);
-      children = [
-        legendSymbolGroups(spec, config, encode, entryRef, deref(entryLayout.columns))
-      ];
-      // pass symbol size information to legend entry generator
-      params.size = sizeExpression(spec, scope, children[0].marks);
-    }
-
-    // generate legend marks
-    children = [
-      guideGroup(LegendEntryRole, null, null, dataRef, interactive,
-                 entryEncode, children, entryLayout)
-    ];
-
-    // include legend title if defined
-    if (datum.title) {
-      children.push(legendTitle(spec, config, encode.title, dataRef));
-    }
-
-    // build legend specification
-    group = guideGroup(LegendRole$1, style, name, dataRef, interactive, legendEncode, children);
-    if (spec.zindex) group.zindex = spec.zindex;
-
-    // parse legend specification
-    return parseMark(group, scope);
-  }
-
-  function legendType(spec, scaleType) {
-    var type = spec.type || Symbols$2;
-
-    if (!spec.type && scaleCount(spec) === 1 && (spec.fill || spec.stroke)) {
-      type = isContinuous(scaleType) ? Gradient$2
-        : isDiscretizing(scaleType) ? Discrete$1
-        : Symbols$2;
-    }
-
-    return type !== Gradient$2 ? type
-      : isDiscretizing(scaleType) ? Discrete$1
-      : Gradient$2;
-  }
-
-  function scaleCount(spec) {
-    return LegendScales.reduce(function(count, type) {
-      return count + (spec[type] ? 1 : 0);
-    }, 0);
-  }
-
-  function buildLegendEncode(_, config) {
-    var encode = {enter: {}, update: {}};
-
-    addEncoders(encode, {
-      orient:       _('orient'),
-      offset:       _('offset'),
-      padding:      _('padding'),
-      titlePadding: _('titlePadding'),
-      cornerRadius: _('cornerRadius'),
-      fill:         _('fillColor'),
-      stroke:       _('strokeColor'),
-      strokeWidth:  config.strokeWidth,
-      strokeDash:   config.strokeDash,
-      x:            _('legendX'),
-      y:            _('legendY'),
-    });
-
-    return encode;
-  }
-
-  function sizeExpression(spec, scope, marks) {
-    var size = deref(getChannel('size', spec, marks)),
-        strokeWidth = deref(getChannel('strokeWidth', spec, marks)),
-        fontSize = deref(getFontSize(marks[1].encode, scope, GuideLabelStyle));
-
-    return parseExpression$1(
-      `max(ceil(sqrt(${size})+${strokeWidth}),${fontSize})`,
-      scope
-    );
-  }
-
-  function getChannel(name, spec, marks) {
-    return spec[name]
-      ? `scale("${spec[name]}",datum)`
-      : getEncoding(name, marks[0].encode);
-  }
-
-  function getFontSize(encode, scope, style) {
-    return getEncoding('fontSize', encode) || getStyle('fontSize', scope, style);
-  }
-
-  const angleExpr = `item.orient==="${Left$1}"?-90:item.orient==="${Right$1}"?90:0`,
-        baselineExpr$1 = `item.orient==="${Bottom$1}"?"${Top$1}":"${Bottom$1}"`;
-
-  function parseTitle(spec, scope) {
-    spec = isString(spec) ? {text: spec} : spec;
-
-    var config = scope.config.title,
-        encode = extend({}, spec.encode),
-        dataRef, title;
-
-    // single-element data source for group title
-    dataRef = ref(scope.add(Collect$1(null, [{}])));
-
-    // build title specification
-    encode.name = spec.name;
-    encode.interactive = spec.interactive;
-    title = buildTitle(spec, config, encode, dataRef);
-    if (spec.zindex) title.zindex = spec.zindex;
-
-    // parse title specification
-    return parseMark(title, scope);
-  }
-
-  function buildTitle(spec, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config),
-        zero = {value: 0},
-        title = spec.text,
-        encode;
-
-    encode = {
-      enter: {opacity: zero},
-      update: {opacity: {value: 1}},
-      exit: {opacity: zero}
-    };
-
-    addEncoders(encode, {
-      text:       title,
-      orient:     _('orient'),
-      anchor:     _('anchor'),
-      align:      {signal: alignExpr},
-      angle:      {signal: angleExpr},
-      baseline:   {signal: baselineExpr$1},
-      dx:         _('dx'),
-      dy:         _('dy'),
-      fill:       _('color'),
-      font:       _('font'),
-      fontSize:   _('fontSize'),
-      fontStyle:  _('fontStyle'),
-      fontWeight: _('fontWeight'),
-      frame:      _('frame'),
-      limit:      _('limit'),
-      offset:     _('offset') || 0
-    }, { // update
-      align:      _('align'),
-      angle:      _('angle'),
-      baseline:   _('baseline')
-    });
-
-    return guideMark(TextMark, TitleRole$1, spec.style || GroupTitleStyle,
-                     null, dataRef, encode, userEncode);
-  }
-
-  function parseData$1(data, scope) {
-    var transforms = [];
-
-    if (data.transform) {
-      data.transform.forEach(function(tx) {
-        transforms.push(parseTransform(tx, scope));
-      });
-    }
-
-    if (data.on) {
-      data.on.forEach(function(on) {
-        parseTrigger(on, scope, data.name);
-      });
-    }
-
-    scope.addDataPipeline(data.name, analyze(data, scope, transforms));
-  }
-
-  /**
-   * Analyze a data pipeline, add needed operators.
-   */
-  function analyze(data, scope, ops) {
-    var output = [],
-        source = null,
-        modify = false,
-        generate = false,
-        upstream, i, n, t, m;
-
-    if (data.values) {
-      // hard-wired input data set
-      if (hasSignal(data.values) || hasSignal(data.format)) {
-        // if either values or format has signal, use dynamic loader
-        output.push(load$1(scope, data));
-        output.push(source = collect());
-      } else {
-        // otherwise, ingest upon dataflow init
-        output.push(source = collect({
-          $ingest: data.values,
-          $format: data.format
-        }));
-      }
-    } else if (data.url) {
-      // load data from external source
-      if (hasSignal(data.url) || hasSignal(data.format)) {
-        // if either url or format has signal, use dynamic loader
-        output.push(load$1(scope, data));
-        output.push(source = collect());
-      } else {
-        // otherwise, request load upon dataflow init
-        output.push(source = collect({
-          $request: data.url,
-          $format: data.format
-        }));
-      }
-    } else if (data.source) {
-      // derives from one or more other data sets
-      source = upstream = array(data.source).map(function(d) {
-        return ref(scope.getData(d).output);
-      });
-      output.push(null); // populate later
-    }
-
-    // scan data transforms, add collectors as needed
-    for (i=0, n=ops.length; i<n; ++i) {
-      t = ops[i];
-      m = t.metadata;
-
-      if (!source && !m.source) {
-        output.push(source = collect());
-      }
-      output.push(t);
-
-      if (m.generates) generate = true;
-      if (m.modifies && !generate) modify = true;
-
-      if (m.source) source = t;
-      else if (m.changes) source = null;
-    }
-
-    if (upstream) {
-      n = upstream.length - 1;
-      output[0] = Relay$1({
-        derive: modify,
-        pulse: n ? upstream : upstream[0]
-      });
-      if (modify || n) {
-        // collect derived and multi-pulse tuples
-        output.splice(1, 0, collect());
-      }
-    }
-
-    if (!source) output.push(collect());
-    output.push(Sieve$1({}));
-    return output;
-  }
-
-  function collect(values) {
-    var s = Collect$1({}, values);
-    s.metadata = {source: true};
-    return s;
-  }
-
-  function load$1(scope, data) {
-    return Load$1({
-      url:    data.url ? scope.property(data.url) : undefined,
-      values: data.values ? scope.property(data.values) : undefined,
-      format: scope.objectProperty(data.format)
-    });
-  }
-
-  function axisConfig(spec, scope) {
-    var config = scope.config,
-        orient = spec.orient,
-        xy = (orient === Top$1 || orient === Bottom$1) ? config.axisX : config.axisY,
-        or = config['axis' + orient[0].toUpperCase() + orient.slice(1)],
-        band = scope.scaleType(spec.scale) === 'band' && config.axisBand;
-
-    return (xy || or || band)
-      ? extend({}, config.axis, xy, or, band)
-      : config.axis;
-  }
-
-  function axisDomain(spec, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config),
-        orient = spec.orient,
-        encode, enter, update, u, u2, v;
-
-    encode = {
-      enter: enter = {opacity: zero$2},
-      update: update = {opacity: one$2},
-      exit: {opacity: zero$2}
-    };
-
-    addEncoders(encode, {
-      stroke:           _('domainColor'),
-      strokeDash:       _('domainDash'),
-      strokeDashOffset: _('domainDashOffset'),
-      strokeWidth:      _('domainWidth'),
-      strokeOpacity:    _('domainOpacity')
-    });
-
-    if (orient === Top$1 || orient === Bottom$1) {
-      u = 'x';
-      v = 'y';
-    } else {
-      u = 'y';
-      v = 'x';
-    }
-    u2 = u + '2';
-
-    enter[v] = zero$2;
-    update[u] = enter[u] = position(spec, 0);
-    update[u2] = enter[u2] = position(spec, 1);
-
-    return guideMark(RuleMark, AxisDomainRole, null, null, dataRef, encode, userEncode);
-  }
-
-  function position(spec, pos) {
-    return {scale: spec.scale, range: pos};
-  }
-
-  function axisGrid(spec, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config),
-        orient = spec.orient,
-        vscale = spec.gridScale,
-        sign = (orient === Left$1 || orient === Top$1) ? 1 : -1,
-        offset = offsetValue$1(spec.offset, sign),
-        encode, enter, exit, update, tickPos, u, v, v2, s;
-
-    encode = {
-      enter: enter = {opacity: zero$2},
-      update: update = {opacity: one$2},
-      exit: exit = {opacity: zero$2}
-    };
-
-    addEncoders(encode, {
-      stroke:           _('gridColor'),
-      strokeDash:       _('gridDash'),
-      strokeDashOffset: _('gridDashOffset'),
-      strokeOpacity:    _('gridOpacity'),
-      strokeWidth:      _('gridWidth')
-    });
-
-    tickPos = {
-      scale:  spec.scale,
-      field:  Value,
-      band:   _('bandPosition'),
-      round:  _('tickRound'),
-      extra:  _('tickExtra'),
-      offset: _('tickOffset')
-    };
-
-    if (orient === Top$1 || orient === Bottom$1) {
-      u = 'x';
-      v = 'y';
-      s = 'height';
-    } else {
-      u = 'y';
-      v = 'x';
-      s = 'width';
-    }
-    v2 = v + '2';
-
-    update[u] = enter[u] = exit[u] = tickPos;
-
-    if (vscale) {
-      update[v] = enter[v] = {scale: vscale, range: 0, mult: sign, offset: offset};
-      update[v2] = enter[v2] = {scale: vscale, range: 1, mult: sign, offset: offset};
-    } else {
-      update[v] = enter[v] = {value: 0, offset: offset};
-      update[v2] = enter[v2] = {signal: s, mult: sign, offset: offset};
-    }
-
-    return guideMark(RuleMark, AxisGridRole, null, Value, dataRef, encode, userEncode);
-  }
-
-  function offsetValue$1(offset, sign)  {
-    if (sign === 1) ; else if (!isObject(offset)) {
-      offset = sign * (offset || 0);
-    } else {
-      var entry = offset = extend({}, offset);
-
-      while (entry.mult != null) {
-        if (!isObject(entry.mult)) {
-          entry.mult *= sign;
-          return offset;
-        } else {
-          entry = entry.mult = extend({}, entry.mult);
-        }
-      }
-
-      entry.mult = sign;
-    }
-
-    return offset;
-  }
-
-  function axisTicks(spec, config, userEncode, dataRef, size) {
-    var _ = lookup$5(spec, config),
-        orient = spec.orient,
-        sign = (orient === Left$1 || orient === Top$1) ? -1 : 1,
-        encode, enter, exit, update, tickSize, tickPos;
-
-    encode = {
-      enter: enter = {opacity: zero$2},
-      update: update = {opacity: one$2},
-      exit: exit = {opacity: zero$2}
-    };
-
-    addEncoders(encode, {
-      stroke:           _('tickColor'),
-      strokeDash:       _('tickDash'),
-      strokeDashOffset: _('tickDashOffset'),
-      strokeOpacity:    _('tickOpacity'),
-      strokeWidth:      _('tickWidth')
-    });
-
-    tickSize = encoder(size);
-    tickSize.mult = sign;
-
-    tickPos = {
-      scale:  spec.scale,
-      field:  Value,
-      band:   _('bandPosition'),
-      round:  _('tickRound'),
-      extra:  _('tickExtra'),
-      offset: _('tickOffset')
-    };
-
-    if (orient === Top$1 || orient === Bottom$1) {
-      update.y = enter.y = zero$2;
-      update.y2 = enter.y2 = tickSize;
-      update.x = enter.x = exit.x = tickPos;
-    } else {
-      update.x = enter.x = zero$2;
-      update.x2 = enter.x2 = tickSize;
-      update.y = enter.y = exit.y = tickPos;
-    }
-
-    return guideMark(RuleMark, AxisTickRole, null, Value, dataRef, encode, userEncode);
-  }
-
-  function flushExpr(scale, threshold, a, b, c) {
-    return {
-      signal: 'flush(range("' + scale + '"), '
-        + 'scale("' + scale + '", datum.value), '
-        + threshold + ',' + a + ',' + b + ',' + c + ')'
-    };
-  }
-
-  function axisLabels(spec, config, userEncode, dataRef, size) {
-    var _ = lookup$5(spec, config),
-        orient = spec.orient,
-        sign = (orient === Left$1 || orient === Top$1) ? -1 : 1,
-        isXAxis = (orient === Top$1 || orient === Bottom$1),
-        scale = spec.scale,
-        flush = deref(_('labelFlush')),
-        flushOffset = deref(_('labelFlushOffset')),
-        flushOn = flush === 0 || !!flush,
-        labelAlign = _('labelAlign'),
-        labelBaseline = _('labelBaseline'),
-        encode, enter, tickSize, tickPos, align, baseline, offset,
-        bound, overlap, separation;
-
-    tickSize = encoder(size);
-    tickSize.mult = sign;
-    tickSize.offset = encoder(_('labelPadding') || 0);
-    tickSize.offset.mult = sign;
-
-    tickPos = {
-      scale:  scale,
-      field:  Value,
-      band:   0.5,
-      offset: _('tickOffset')
-    };
-
-    if (isXAxis) {
-      align = labelAlign || (flushOn
-        ? flushExpr(scale, flush, '"left"', '"right"', '"center"')
-        : 'center');
-      baseline = labelBaseline || (orient === Top$1 ? 'bottom' : 'top');
-      offset = !labelAlign;
-    } else {
-      align = labelAlign || (orient === Right$1 ? 'left' : 'right');
-      baseline = labelBaseline || (flushOn
-        ? flushExpr(scale, flush, '"top"', '"bottom"', '"middle"')
-        : 'middle');
-      offset = !labelBaseline;
-    }
-
-    offset = offset && flushOn && flushOffset
-      ? flushExpr(scale, flush, '-' + flushOffset, flushOffset, 0)
-      : null;
-
-    encode = {
-      enter: enter = {
-        opacity: zero$2,
-        x: isXAxis ? tickPos : tickSize,
-        y: isXAxis ? tickSize : tickPos
-      },
-      update: {
-        opacity: one$2,
-        text: {field: Label},
-        x: enter.x,
-        y: enter.y
-      },
-      exit: {
-        opacity: zero$2,
-        x: enter.x,
-        y: enter.y
-      }
-    };
-
-    addEncoders(encode, {
-      [isXAxis ? 'dx' : 'dy']: offset,
-      align:       align,
-      baseline:    baseline,
-      angle:       _('labelAngle'),
-      fill:        _('labelColor'),
-      fillOpacity: _('labelOpacity'),
-      font:        _('labelFont'),
-      fontSize:    _('labelFontSize'),
-      fontWeight:  _('labelFontWeight'),
-      fontStyle:   _('labelFontStyle'),
-      limit:       _('labelLimit')
-    });
-
-    bound   = _('labelBound');
-    overlap = _('labelOverlap');
-    separation = _('labelSeparation');
-
-    spec = guideMark(TextMark, AxisLabelRole, GuideLabelStyle, Value, dataRef, encode, userEncode);
-
-    // if overlap method or bound defined, request label overlap removal
-    if (overlap || bound) {
-      spec.overlap = {
-        separation: separation,
-        method: overlap,
-        order: 'datum.index',
-        bound: bound ? {scale: scale, orient: orient, tolerance: bound} : null
-      };
-    }
-
-    return spec;
-  }
-
-  function axisTitle(spec, config, userEncode, dataRef) {
-    var _ = lookup$5(spec, config),
-        orient = spec.orient,
-        sign = (orient === Left$1 || orient === Top$1) ? -1 : 1,
-        horizontal = (orient === Top$1 || orient === Bottom$1),
-        encode, enter, update, titlePos;
-
-    encode = {
-      enter: enter = {
-        opacity: zero$2,
-        anchor: encoder(_('titleAnchor')),
-        align: {signal: alignExpr}
-      },
-      update: update = extend({}, enter, {
-        opacity: one$2,
-        text: encoder(spec.title)
-      }),
-      exit: {
-        opacity: zero$2
-      }
-    };
-
-    titlePos = {
-      signal: `lerp(range("${spec.scale}"), ${anchorExpr(0, 1, 0.5)})`
-    };
-
-    if (horizontal) {
-      update.x = titlePos;
-      enter.angle = {value: 0};
-      enter.baseline = {value: orient === Top$1 ? 'bottom' : 'top'};
-    } else {
-      update.y = titlePos;
-      enter.angle = {value: sign * 90};
-      enter.baseline = {value: 'bottom'};
-    }
-
-    addEncoders(encode, {
-      angle:       _('titleAngle'),
-      baseline:    _('titleBaseline'),
-      fill:        _('titleColor'),
-      fillOpacity: _('titleOpacity'),
-      font:        _('titleFont'),
-      fontSize:    _('titleFontSize'),
-      fontStyle:   _('titleFontStyle'),
-      fontWeight:  _('titleFontWeight'),
-      limit:       _('titleLimit')
-    }, { // require update
-      align:       _('titleAlign')
-    });
-
-    !addEncode(encode, 'x', _('titleX'), 'update')
-      && !horizontal && !has('x', userEncode)
-      && (encode.enter.auto = {value: true});
-
-    !addEncode(encode, 'y', _('titleY'), 'update')
-      && horizontal && !has('y', userEncode)
-      && (encode.enter.auto = {value: true});
-
-    return guideMark(TextMark, AxisTitleRole, GuideTitleStyle, null, dataRef, encode, userEncode);
-  }
-
-  function parseAxis(spec, scope) {
-    var config = axisConfig(spec, scope),
-        encode = spec.encode || {},
-        axisEncode = encode.axis || {},
-        name = axisEncode.name || undefined,
-        interactive = axisEncode.interactive,
-        style = axisEncode.style,
-        _ = lookup$5(spec, config),
-        datum, dataRef, ticksRef, size, group, children;
-
-    // single-element data source for axis group
-    datum = {
-      orient: spec.orient,
-      ticks:  !!_('ticks'),
-      labels: !!_('labels'),
-      grid:   !!_('grid'),
-      domain: !!_('domain'),
-      title:  spec.title != null
-    };
-    dataRef = ref(scope.add(Collect$1({}, [datum])));
-
-    // encoding properties for axis group item
-    axisEncode = extendEncode({
-      update: {
-        offset:       encoder(_('offset') || 0),
-        position:     encoder(value(spec.position, 0)),
-        titlePadding: encoder(_('titlePadding')),
-        minExtent:    encoder(_('minExtent')),
-        maxExtent:    encoder(_('maxExtent')),
-        range:        {signal: `abs(span(range("${spec.scale}")))`}
-      }
-    }, encode.axis, Skip$1);
-
-    // data source for axis ticks
-    ticksRef = ref(scope.add(AxisTicks$1({
-      scale:   scope.scaleRef(spec.scale),
-      extra:   scope.property(_('tickExtra')),
-      count:   scope.objectProperty(spec.tickCount),
-      values:  scope.objectProperty(spec.values),
-      minstep: scope.property(spec.tickMinStep),
-      formatType: scope.property(spec.formatType),
-      formatSpecifier: scope.property(spec.format)
-    })));
-
-    // generate axis marks
-    children = [];
-
-    // include axis gridlines if requested
-    if (datum.grid) {
-      children.push(axisGrid(spec, config, encode.grid, ticksRef));
-    }
-
-    // include axis ticks if requested
-    if (datum.ticks) {
-      size = _('tickSize');
-      children.push(axisTicks(spec, config, encode.ticks, ticksRef, size));
-    }
-
-    // include axis labels if requested
-    if (datum.labels) {
-      size = datum.ticks ? size : 0;
-      children.push(axisLabels(spec, config, encode.labels, ticksRef, size));
-    }
-
-    // include axis domain path if requested
-    if (datum.domain) {
-      children.push(axisDomain(spec, config, encode.domain, dataRef));
-    }
-
-    // include axis title if defined
-    if (datum.title) {
-      children.push(axisTitle(spec, config, encode.title, dataRef));
-    }
-
-    // build axis specification
-    group = guideGroup(AxisRole$1, style, name, dataRef, interactive, axisEncode, children);
-    if (spec.zindex) group.zindex = spec.zindex;
-
-    // parse axis specification
-    return parseMark(group, scope);
-  }
-
-  function parseSpec(spec, scope, preprocessed) {
-    var signals = array(spec.signals),
-        scales = array(spec.scales);
-
-    if (!preprocessed) signals.forEach(function(_) {
-      parseSignal(_, scope);
-    });
-
-    array(spec.projections).forEach(function(_) {
-      parseProjection(_, scope);
-    });
-
-    scales.forEach(function(_) {
-      initScale(_, scope);
-    });
-
-    array(spec.data).forEach(function(_) {
-      parseData$1(_, scope);
-    });
-
-    scales.forEach(function(_) {
-      parseScale(_, scope);
-    });
-
-    signals.forEach(function(_) {
-      parseSignalUpdates(_, scope);
-    });
-
-    array(spec.axes).forEach(function(_) {
-      parseAxis(_, scope);
-    });
-
-    array(spec.marks).forEach(function(_) {
-      parseMark(_, scope);
-    });
-
-    array(spec.legends).forEach(function(_) {
-      parseLegend(_, scope);
-    });
-
-    if (spec.title) {
-      parseTitle(spec.title, scope);
-    }
-
-    scope.parseLambdas();
-    return scope;
-  }
-
-  var defined = toSet(['width', 'height', 'padding', 'autosize']);
-
-  function parseView(spec, scope) {
-    var config = scope.config,
-        op, input, encode, parent, root;
-
-    scope.background = spec.background || config.background;
-    scope.eventConfig = config.events;
-    root = ref(scope.root = scope.add(operator()));
-    scope.addSignal('width', spec.width || 0);
-    scope.addSignal('height', spec.height || 0);
-    scope.addSignal('padding', parsePadding(spec.padding, config));
-    scope.addSignal('autosize', parseAutosize(spec.autosize, config));
-    scope.legends = scope.objectProperty(config.legend && config.legend.layout);
-
-    array(spec.signals).forEach(function(_) {
-      if (!defined[_.name]) parseSignal(_, scope);
-    });
-
-    // Store root group item
-    input = scope.add(Collect$1());
-
-    // Encode root group item
-    encode = extendEncode({
-      enter: { x: {value: 0}, y: {value: 0} },
-      update: { width: {signal: 'width'}, height: {signal: 'height'} }
-    }, spec.encode);
-
-    encode = scope.add(Encode$1(
-      encoders(encode, GroupMark, FrameRole$1, spec.style, scope, {pulse: ref(input)}))
-    );
-
-    // Perform view layout
-    parent = scope.add(ViewLayout$1({
-      layout:       scope.objectProperty(spec.layout),
-      legends:      scope.legends,
-      autosize:     scope.signalRef('autosize'),
-      mark:         root,
-      pulse:        ref(encode)
-    }));
-    scope.operators.pop();
-
-    // Parse remainder of specification
-    scope.pushState(ref(encode), ref(parent), null);
-    parseSpec(spec, scope, true);
-    scope.operators.push(parent);
-
-    // Bound / render / sieve root item
-    op = scope.add(Bound$1({mark: root, pulse: ref(parent)}));
-    op = scope.add(Render$1({pulse: ref(op)}));
-    op = scope.add(Sieve$1({pulse: ref(op)}));
-
-    // Track metadata for root item
-    scope.addData('root', new DataScope(scope, input, input, op));
-
-    return scope;
-  }
-
-  function Scope$1(config) {
-    this.config = config;
-
-    this.bindings = [];
-    this.field = {};
-    this.signals = {};
-    this.lambdas = {};
-    this.scales = {};
-    this.events = {};
-    this.data = {};
-
-    this.streams = [];
-    this.updates = [];
-    this.operators = [];
-    this.background = null;
-    this.eventConfig = null;
-
-    this._id = 0;
-    this._subid = 0;
-    this._nextsub = [0];
-
-    this._parent = [];
-    this._encode = [];
-    this._lookup = [];
-    this._markpath = [];
-  }
-
-  function Subscope(scope) {
-    this.config = scope.config;
-    this.legends = scope.legends;
-
-    this.field = Object.create(scope.field);
-    this.signals = Object.create(scope.signals);
-    this.lambdas = Object.create(scope.lambdas);
-    this.scales = Object.create(scope.scales);
-    this.events = Object.create(scope.events);
-    this.data = Object.create(scope.data);
-
-    this.streams = [];
-    this.updates = [];
-    this.operators = [];
-
-    this._id = 0;
-    this._subid = ++scope._nextsub[0];
-    this._nextsub = scope._nextsub;
-
-    this._parent = scope._parent.slice();
-    this._encode = scope._encode.slice();
-    this._lookup = scope._lookup.slice();
-    this._markpath = scope._markpath;
-  }
-
-  var prototype$1o = Scope$1.prototype = Subscope.prototype;
-
-  // ----
-
-  prototype$1o.fork = function() {
-    return new Subscope(this);
-  };
-
-  prototype$1o.isSubscope = function() {
-    return this._subid > 0;
-  };
-
-  prototype$1o.toRuntime = function() {
-    this.finish();
-    return {
-      background:  this.background,
-      operators:   this.operators,
-      streams:     this.streams,
-      updates:     this.updates,
-      bindings:    this.bindings,
-      eventConfig: this.eventConfig
-    };
-  };
-
-  prototype$1o.id = function() {
-    return (this._subid ? this._subid + ':' : 0) + this._id++;
-  };
-
-  prototype$1o.add = function(op) {
-    this.operators.push(op);
-    op.id = this.id();
-    // if pre-registration references exist, resolve them now
-    if (op.refs) {
-      op.refs.forEach(function(ref) { ref.$ref = op.id; });
-      op.refs = null;
-    }
-    return op;
-  };
-
-  prototype$1o.proxy = function(op) {
-    var vref = op instanceof Entry ? ref(op) : op;
-    return this.add(Proxy$1({value: vref}));
-  };
-
-  prototype$1o.addStream = function(stream) {
-    this.streams.push(stream);
-    stream.id = this.id();
-    return stream;
-  };
-
-  prototype$1o.addUpdate = function(update) {
-    this.updates.push(update);
-    return update;
-  };
-
-  // Apply metadata
-  prototype$1o.finish = function() {
-    var name, ds;
-
-    // annotate root
-    if (this.root) this.root.root = true;
-
-    // annotate signals
-    for (name in this.signals) {
-      this.signals[name].signal = name;
-    }
-
-    // annotate scales
-    for (name in this.scales) {
-      this.scales[name].scale = name;
-    }
-
-    // annotate data sets
-    function annotate(op, name, type) {
-      var data, list;
-      if (op) {
-        data = op.data || (op.data = {});
-        list = data[name] || (data[name] = []);
-        list.push(type);
-      }
-    }
-    for (name in this.data) {
-      ds = this.data[name];
-      annotate(ds.input,  name, 'input');
-      annotate(ds.output, name, 'output');
-      annotate(ds.values, name, 'values');
-      for (var field in ds.index) {
-        annotate(ds.index[field], name, 'index:' + field);
-      }
-    }
-
-    return this;
-  };
-
-  // ----
-
-  prototype$1o.pushState = function(encode, parent, lookup) {
-    this._encode.push(ref(this.add(Sieve$1({pulse: encode}))));
-    this._parent.push(parent);
-    this._lookup.push(lookup ? ref(this.proxy(lookup)) : null);
-    this._markpath.push(-1);
-  };
-
-  prototype$1o.popState = function() {
-    this._encode.pop();
-    this._parent.pop();
-    this._lookup.pop();
-    this._markpath.pop();
-  };
-
-  prototype$1o.parent = function() {
-    return peek(this._parent);
-  };
-
-  prototype$1o.encode = function() {
-    return peek(this._encode);
-  };
-
-  prototype$1o.lookup = function() {
-    return peek(this._lookup);
-  };
-
-  prototype$1o.markpath = function() {
-    var p = this._markpath;
-    return ++p[p.length-1];
-  };
-
-  // ----
-
-  prototype$1o.fieldRef = function(field, name) {
-    if (isString(field)) return fieldRef(field, name);
-    if (!field.signal) {
-      error('Unsupported field reference: ' + $(field));
-    }
-
-    var s = field.signal,
-        f = this.field[s],
-        params;
-
-    if (!f) {
-      params = {name: this.signalRef(s)};
-      if (name) params.as = name;
-      this.field[s] = f = ref(this.add(Field$1(params)));
-    }
-    return f;
-  };
-
-  prototype$1o.compareRef = function(cmp, stable) {
-    function check(_) {
-      if (isSignal(_)) {
-        signal = true;
-        return scope.signalRef(_.signal);
-      } else if (isExpr(_)) {
-        signal = true;
-        return scope.exprRef(_.expr);
-      } else {
-        return _;
-      }
-    }
-
-    var scope = this,
-        signal = false,
-        fields = array(cmp.field).map(check),
-        orders = array(cmp.order).map(check);
-
-    if (stable) {
-      fields.push(tupleidRef);
-    }
-
-    return signal
-      ? ref(this.add(Compare$1({fields: fields, orders: orders})))
-      : compareRef(fields, orders);
-  };
-
-  prototype$1o.keyRef = function(fields, flat) {
-    function check(_) {
-      if (isSignal(_)) {
-        signal = true;
-        return ref(sig[_.signal]);
-      } else {
-        return _;
-      }
-    }
-
-    var sig = this.signals,
-        signal = false;
-    fields = array(fields).map(check);
-
-    return signal
-      ? ref(this.add(Key$1({fields: fields, flat: flat})))
-      : keyRef(fields, flat);
-  };
-
-  prototype$1o.sortRef = function(sort) {
-    if (!sort) return sort;
-
-    // including id ensures stable sorting
-    var a = [aggrField(sort.op, sort.field), tupleidRef],
-        o = sort.order || Ascending;
-
-    return o.signal
-      ? ref(this.add(Compare$1({
-          fields: a,
-          orders: [o = this.signalRef(o.signal), o]
-        })))
-      : compareRef(a, [o, o]);
-  };
-
-  // ----
-
-  prototype$1o.event = function(source, type) {
-    var key = source + ':' + type;
-    if (!this.events[key]) {
-      var id = this.id();
-      this.streams.push({
-        id: id,
-        source: source,
-        type: type
-      });
-      this.events[key] = id;
-    }
-    return this.events[key];
-  };
-
-  // ----
-
-  prototype$1o.addSignal = function(name, value) {
-    if (this.signals.hasOwnProperty(name)) {
-      error('Duplicate signal name: ' + $(name));
-    }
-    var op = value instanceof Entry ? value : this.add(operator(value));
-    return this.signals[name] = op;
-  };
-
-  prototype$1o.getSignal = function(name) {
-    if (!this.signals[name]) {
-      error('Unrecognized signal name: ' + $(name));
-    }
-    return this.signals[name];
-  };
-
-  prototype$1o.signalRef = function(s) {
-    if (this.signals[s]) {
-      return ref(this.signals[s]);
-    } else if (!this.lambdas.hasOwnProperty(s)) {
-      this.lambdas[s] = this.add(operator(null));
-    }
-    return ref(this.lambdas[s]);
-  };
-
-  prototype$1o.parseLambdas = function() {
-    var code = Object.keys(this.lambdas);
-    for (var i=0, n=code.length; i<n; ++i) {
-      var s = code[i],
-          e = parseExpression$1(s, this),
-          op = this.lambdas[s];
-      op.params = e.$params;
-      op.update = e.$expr;
-    }
-  };
-
-  prototype$1o.property = function(spec) {
-    return spec && spec.signal ? this.signalRef(spec.signal) : spec;
-  };
-
-  prototype$1o.objectProperty = function(spec) {
-    return (!spec || !isObject(spec)) ? spec
-      : this.signalRef(spec.signal || propertyLambda(spec));
-  };
-
-  function propertyLambda(spec) {
-    return (isArray(spec) ? arrayLambda : objectLambda)(spec);
-  }
-
-  function arrayLambda(array) {
-    var code = '[',
-        i = 0,
-        n = array.length,
-        value;
-
-    for (; i<n; ++i) {
-      value = array[i];
-      code += (i > 0 ? ',' : '')
-        + (isObject(value)
-          ? (value.signal || propertyLambda(value))
-          : $(value));
-    }
-    return code + ']';
-  }
-
-  function objectLambda(obj) {
-    var code = '{',
-        i = 0,
-        key, value;
-
-    for (key in obj) {
-      value = obj[key];
-      code += (++i > 1 ? ',' : '')
-        + $(key) + ':'
-        + (isObject(value)
-          ? (value.signal || propertyLambda(value))
-          : $(value));
-    }
-    return code + '}';
-  }
-
-  prototype$1o.exprRef = function(code, name) {
-    var params = {expr: parseExpression$1(code, this)};
-    if (name) params.expr.$name = name;
-    return ref(this.add(Expression$1(params)));
-  };
-
-  prototype$1o.addBinding = function(name, bind) {
-    if (!this.bindings) {
-      error('Nested signals do not support binding: ' + $(name));
-    }
-    this.bindings.push(extend({signal: name}, bind));
-  };
-
-  // ----
-
-  prototype$1o.addScaleProj = function(name, transform) {
-    if (this.scales.hasOwnProperty(name)) {
-      error('Duplicate scale or projection name: ' + $(name));
-    }
-    this.scales[name] = this.add(transform);
-  };
-
-  prototype$1o.addScale = function(name, params) {
-    this.addScaleProj(name, Scale$1(params));
-  };
-
-  prototype$1o.addProjection = function(name, params) {
-    this.addScaleProj(name, Projection$1(params));
-  };
-
-  prototype$1o.getScale = function(name) {
-    if (!this.scales[name]) {
-      error('Unrecognized scale name: ' + $(name));
-    }
-    return this.scales[name];
-  };
-
-  prototype$1o.projectionRef =
-  prototype$1o.scaleRef = function(name) {
-    return ref(this.getScale(name));
-  };
-
-  prototype$1o.projectionType =
-  prototype$1o.scaleType = function(name) {
-    return this.getScale(name).params.type;
-  };
-
-  // ----
-
-  prototype$1o.addData = function(name, dataScope) {
-    if (this.data.hasOwnProperty(name)) {
-      error('Duplicate data set name: ' + $(name));
-    }
-    return (this.data[name] = dataScope);
-  };
-
-  prototype$1o.getData = function(name) {
-    if (!this.data[name]) {
-      error('Undefined data set name: ' + $(name));
-    }
-    return this.data[name];
-  };
-
-  prototype$1o.addDataPipeline = function(name, entries) {
-    if (this.data.hasOwnProperty(name)) {
-      error('Duplicate data set name: ' + $(name));
-    }
-    return this.addData(name, DataScope.fromEntries(this, entries));
-  };
-
-  function defaults(configs) {
-    return (configs || []).reduce((out, config) => {
-      for (var key in config) {
-        var r = key === 'legend' ? {'layout': 1}
-          : key === 'style' ? true : null;
-        copy$3(out, key, config[key], r);
-      }
-      return out;
-    }, defaults$1());
-  }
-
-  function copy$3(output, key, value, recurse) {
-    var k, o;
-    if (isObject(value) && !isArray(value)) {
-      o = isObject(output[key]) ? output[key] : (output[key] = {});
-      for (k in value) {
-        if (recurse && (recurse === true || recurse[k])) {
-          copy$3(o, k, value[k]);
-        } else {
-          o[k] = value[k];
-        }
-      }
-    } else {
-      output[key] = value;
-    }
-  }
-
-  var defaultFont = 'sans-serif',
-      defaultSymbolSize = 30,
-      defaultStrokeWidth = 2,
-      defaultColor = '#4c78a8',
-      black = '#000',
-      gray = '#888',
-      lightGray = '#ddd';
-
-  /**
-   * Standard configuration defaults for Vega specification parsing.
-   * Users can provide their own (sub-)set of these default values
-   * by passing in a config object to the top-level parse method.
-   */
-  function defaults$1() {
-    return {
-      // default padding around visualization
-      padding: 0,
-
-      // default for automatic sizing; options: 'none', 'pad', 'fit'
-      // or provide an object (e.g., {'type': 'pad', 'resize': true})
-      autosize: 'pad',
-
-      // default view background color
-      // covers the entire view component
-      background: null,
-
-      // default event handling configuration
-      // preventDefault for view-sourced event types except 'wheel'
-      events: {
-        defaults: {allow: ['wheel']}
-      },
-
-      // defaults for top-level group marks
-      // accepts mark properties (fill, stroke, etc)
-      // covers the data rectangle within group width/height
-      group: null,
-
-      // defaults for basic mark types
-      // each subset accepts mark properties (fill, stroke, etc)
-      mark: null,
-      arc: { fill: defaultColor },
-      area: { fill: defaultColor },
-      image: null,
-      line: {
-        stroke: defaultColor,
-        strokeWidth: defaultStrokeWidth
-      },
-      path: { stroke: defaultColor },
-      rect: { fill: defaultColor },
-      rule: { stroke: black },
-      shape: { stroke: defaultColor },
-      symbol: {
-        fill: defaultColor,
-        size: 64
-      },
-      text: {
-        fill: black,
-        font: defaultFont,
-        fontSize: 11
-      },
-
-      // style definitions
-      style: {
-        // axis & legend labels
-        'guide-label': {
-          fill: black,
-          font: defaultFont,
-          fontSize: 10
-        },
-        // axis & legend titles
-        'guide-title': {
-          fill: black,
-          font: defaultFont,
-          fontSize: 11,
-          fontWeight: 'bold'
-        },
-        // headers, including chart title
-        'group-title': {
-          fill: black,
-          font: defaultFont,
-          fontSize: 13,
-          fontWeight: 'bold'
-        },
-        // defaults for styled point marks in Vega-Lite
-        point: {
-          size: defaultSymbolSize,
-          strokeWidth: defaultStrokeWidth,
-          shape: 'circle'
-        },
-        circle: {
-          size: defaultSymbolSize,
-          strokeWidth: defaultStrokeWidth
-        },
-        square: {
-          size: defaultSymbolSize,
-          strokeWidth: defaultStrokeWidth,
-          shape: 'square'
-        },
-        // defaults for styled group marks in Vega-Lite
-        cell: {
-          fill: 'transparent',
-          stroke: lightGray
-        }
-      },
-
-      // defaults for title
-      title: {
-        orient: 'top',
-        anchor: 'middle',
-        offset: 4
-      },
-
-      // defaults for axes
-      axis: {
-        minExtent: 0,
-        maxExtent: 200,
-        bandPosition: 0.5,
-        domain: true,
-        domainWidth: 1,
-        domainColor: gray,
-        grid: false,
-        gridWidth: 1,
-        gridColor: lightGray,
-        labels: true,
-        labelAngle: 0,
-        labelLimit: 180,
-        labelPadding: 2,
-        ticks: true,
-        tickColor: gray,
-        tickOffset: 0,
-        tickRound: true,
-        tickSize: 5,
-        tickWidth: 1,
-        titlePadding: 4
-      },
-
-      // correction for centering bias
-      axisBand: {
-        tickOffset: -1
-      },
-
-      // defaults for legends
-      legend: {
-        orient: 'right',
-        padding: 0,
-        gridAlign: 'each',
-        columnPadding: 10,
-        rowPadding: 2,
-        symbolDirection: 'vertical',
-        gradientDirection: 'vertical',
-        gradientLength: 200,
-        gradientThickness: 16,
-        gradientStrokeColor: lightGray,
-        gradientStrokeWidth: 0,
-        gradientLabelOffset: 2,
-        labelAlign: 'left',
-        labelBaseline: 'middle',
-        labelLimit: 160,
-        labelOffset: 4,
-        labelOverlap: true,
-        symbolType: 'circle',
-        symbolSize: 100,
-        symbolOffset: 0,
-        symbolStrokeWidth: 1.5,
-        symbolBaseFillColor: 'transparent',
-        symbolBaseStrokeColor: gray,
-        titleLimit: 180,
-        titleOrient: 'top',
-        titlePadding: 5,
-        layout: {
-          offset: 18,
-          direction: 'horizontal',
-          left:   { direction: 'vertical' },
-          right:  { direction: 'vertical' }
-        }
-      },
-
-      // defaults for scale ranges
-      range: {
-        category: {
-          scheme: 'tableau10'
-        },
-        ordinal: {
-          scheme: 'blues'
-        },
-        heatmap: {
-          scheme: 'yellowgreenblue'
-        },
-        ramp: {
-          scheme: 'blues'
-        },
-        diverging: {
-          scheme: 'blueorange',
-          extent: [1, 0]
-        },
-        symbol: [
-          'circle',
-          'square',
-          'triangle-up',
-          'cross',
-          'diamond',
-          'triangle-right',
-          'triangle-down',
-          'triangle-left'
-        ]
-      }
-    };
-  }
-
-  function parse$5(spec, config) {
-    if (!isObject(spec)) error('Input Vega specification must be an object.');
-    return parseView(spec, new Scope$1(defaults([config, spec.config])))
-      .toRuntime();
-  }
+  prototype$1o.getState = getState$1;
+  prototype$1o.setState = setState$1;
 
   // -- Transforms -----
-  extend(transforms, tx, vtx, encode, geo, force, tree$1, reg, voronoi$1, wordcloud, xf);
+  extend(transforms, tx, vtx, encode$1, geo, force, tree$1, reg, voronoi$1, wordcloud, xf);
 
   exports.Bounds = Bounds;
   exports.CanvasHandler = CanvasHandler;
@@ -39120,7 +39128,7 @@
   exports.SVGStringRenderer = SVGStringRenderer;
   exports.Scenegraph = Scenegraph;
   exports.Transform = Transform;
-  exports.View = View;
+  exports.View = View$1;
   exports.Warn = Warn;
   exports.accessor = accessor;
   exports.accessorFields = accessorFields;
@@ -39169,7 +39177,7 @@
   exports.interpolate = interpolate$1;
   exports.interpolateColors = interpolateColors;
   exports.interpolateRange = interpolateRange;
-  exports.intersect = intersect$1;
+  exports.intersect = intersect$2;
   exports.intersectBoxLine = intersectBoxLine;
   exports.intersectPath = intersectPath;
   exports.intersectPoint = intersectPoint;
@@ -39195,7 +39203,7 @@
   exports.panLog = panLog;
   exports.panPow = panPow;
   exports.panSymlog = panSymlog;
-  exports.parse = parse$5;
+  exports.parse = parse$4;
   exports.pathCurves = curves;
   exports.pathEqual = pathEqual;
   exports.pathParse = pathParse;
@@ -39227,7 +39235,7 @@
   exports.repeat = repeat;
   exports.resetSVGClipId = resetSVGClipId;
   exports.responseType = responseType;
-  exports.runtime = parse$4;
+  exports.runtime = parse$5;
   exports.runtimeContext = context$2;
   exports.sampleCurve = sampleCurve;
   exports.scale = scale$1;
