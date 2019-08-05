@@ -26807,7 +26807,7 @@
 
   var ns = metadata.xmlns;
 
-  function SVGRenderer(loader) {
+  function SVGRenderer (loader) {
     Renderer.call(this, loader);
     this._dirtyID = 1;
     this._dirty = [];
@@ -26942,7 +26942,7 @@
     }
   };
 
-  function updateGradient(el, grad, index) {
+  function updateGradient (el, grad, index) {
     var i, n, stop;
 
     if (grad.gradient === 'radial') {
@@ -26989,7 +26989,7 @@
     return index;
   }
 
-  function updateClipping(el, clip, index) {
+  function updateClipping (el, clip, index) {
     var mask;
 
     el = domChild(el, index, 'clipPath', ns);
@@ -27086,7 +27086,7 @@
     return !this._dirtyAll;
   };
 
-  function dirtyParents(item, id) {
+  function dirtyParents (item, id) {
     for (; item && item.dirty !== id; item = item.mark.group) {
       item.dirty = id;
       if (item.mark && item.mark.dirty !== id) {
@@ -27119,6 +27119,7 @@
         position: ''
       }));
       console.log(scene.source);
+      scene.group.context.dataflow.toSVG().then(x => console.log(x));
     }
     if (scene.role == 'legend') {
       parent.setAttribute('data-datum', JSON.stringify({
@@ -27137,7 +27138,7 @@
       parent.removeAttribute('clip-path');
     }
 
-    function process(item) {
+    function process (item) {
       var dirty = renderer.isDirty(item),
         node = bind(item, parent, sibling, mdef.tag, svg);
 
@@ -27161,7 +27162,7 @@
   };
 
   // Recursively process group contents.
-  function recurse(renderer, el, group) {
+  function recurse (renderer, el, group) {
     el = el.lastChild;
     var prev, idx = 0;
 
@@ -27176,7 +27177,7 @@
 
   // Bind a scenegraph item to an SVG DOM element.
   // Create new SVG elements as needed.
-  function bind(item, el, sibling, tag, svg) {
+  function bind (item, el, sibling, tag, svg) {
     var node = item._svg, doc;
 
     // create a new dom node if needed
@@ -27211,7 +27212,7 @@
     return node;
   }
 
-  function hasSiblings(item) {
+  function hasSiblings (item) {
     var parent = item.mark || item.group;
     return parent && parent.items.length > 1;
   }
@@ -27256,7 +27257,7 @@
     }
   };
 
-  function setStyle(el, name, value) {
+  function setStyle (el, name, value) {
     if (value !== values[name]) {
       if (value == null) {
         el.style.removeProperty(name);
@@ -27285,7 +27286,7 @@
     this.style(element, item);
   };
 
-  function emit(name, value, ns) {
+  function emit (name, value, ns) {
     // early exit if value is unchanged
     if (value === values[name]) return;
 
@@ -27341,7 +27342,7 @@
     }
   };
 
-  function href() {
+  function href () {
     var loc;
     return typeof window === 'undefined' ? ''
       : (loc = window.location).hash ? loc.href.slice(0, -loc.hash.length)

@@ -1,8 +1,8 @@
 {
   "private": true,
+  "version": "1.0.0",
   "license": "BSD-3-Clause",
-  "author": "UW Interactive Data Lab (http://idl.cs.washington.edu)",
-  "repository": "vega/vega",
+  "repository": "z-jack/vega-marker-core",
   "scripts": {
     "build": "lerna run build && yarn docsbuild",
     "clean": "lerna clean --yes && lerna exec -- rimraf build && lerna exec -- rimraf LICENSE && rimraf node_modules yarn.lock",
