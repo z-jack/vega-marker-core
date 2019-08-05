@@ -12,8 +12,7 @@
     "license": "lerna exec -- cp ../../LICENSE .",
     "release": "yarn license && lerna publish from-package",
     "serve": "http-server packages/vega/ -c-1 -p8080 -o",
-    "test": "lerna run test",
-    "postinstall": "yarn data"
+    "test": "lerna run test"
   },
   "devDependencies": {
     "@types/node": "^12.6.0",
