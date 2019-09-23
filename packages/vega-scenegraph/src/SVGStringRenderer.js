@@ -11,7 +11,7 @@ import { styles, styleProperties } from './util/svg/styles';
 import { inherits } from 'vega-util';
 import id from './util/id'
 
-export default function SVGStringRenderer(loader) {
+export default function SVGStringRenderer (loader) {
   Renderer.call(this, loader);
 
   this._text = {
@@ -179,7 +179,7 @@ prototype.buildDefs = function () {
 
 var object;
 
-function emit(name, value, ns, prefixed) {
+function emit (name, value, ns, prefixed) {
   object[prefixed || name] = value;
 }
 
@@ -223,16 +223,28 @@ prototype.mark = function (scene) {
   }
 
   // render opening group tag
+  let datum = null
+  if (scene.role == 'axis') {
+    datum = JSON.stringify({
+      _TYPE: 'axis',
+      type: scene.items[0].datum.orient,
+      position: ''
+    })
+  }
+  if (scene.role == 'legend') {
+    datum = JSON.stringify({
+      _TYPE: 'legend',
+      color: ''
+    })
+  }
   str += openTag('g', {
     'class': cssClass(scene),
-    'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null
+    'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null,
+    'data-datum': datum
   }, style);
-  if (scene.role == 'axis' || scene.role == 'legend') {
-    debugger;
-  }
 
   // render contained elements
-  function process(item) {
+  function process (item) {
     var href = renderer.href(item);
     if (href) str += openTag('a', href);
 
@@ -275,7 +287,7 @@ prototype.markGroup = function (scene) {
   return str;
 };
 
-function applyStyles(o, mark, tag, defs) {
+function applyStyles (o, mark, tag, defs) {
   if (o == null) return '';
   var i, n, prop, name, value, s = '';
 
@@ -314,7 +326,7 @@ function applyStyles(o, mark, tag, defs) {
   return s ? 'style="' + s.trim() + '"' : null;
 }
 
-function escape_text(s) {
+function escape_text (s) {
   return s.replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');

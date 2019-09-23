@@ -14,6 +14,7 @@ export default function (type, shape, isect) {
     emit('d', shape(null, item));
     if (item.mark.role.startsWith('mark')) {
       emit('id', id.getMarkId())
+      emit('class', `mark ${id.getMarkClass(item.mark)} path`)
       emit('data-datum', JSON.stringify({
         _TYPE: 'path',
         _MARKID: id.getMarkClass(item.mark),

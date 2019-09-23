@@ -12422,6 +12422,7 @@
       emit('d', shape(null, item));
       if (item.mark.role.startsWith('mark')) {
         emit('id', id$1.getMarkId());
+        emit('class', `mark ${id$1.getMarkClass(item.mark)} path`);
         emit('data-datum', JSON.stringify({
           _TYPE: 'path',
           _MARKID: id$1.getMarkClass(item.mark),
@@ -12528,6 +12529,7 @@
       if (items.length) {
         emit('d', shape(null, items));
         emit('id', id$1.getMarkId());
+        emit('class', `mark ${id$1.getMarkClass(item.mark)} path`);
         emit('data-datum', JSON.stringify(items.map(i => {
           return {
             _TYPE: 'path',
@@ -12799,6 +12801,7 @@
     emit('preserveAspectRatio', a);
     if (item.mark.role.startsWith('mark')) {
       emit('id', id$1.getMarkId());
+      emit('class', `mark ${id$1.getMarkClass(item.mark)} image`);
       emit('data-datum', JSON.stringify({
         _TYPE: 'image',
         _MARKID: id$1.getMarkClass(item.mark),
@@ -12882,6 +12885,7 @@
     emit('d', item.path);
     if (item.mark.role.startsWith('mark')) {
       emit('id', id$1.getMarkId());
+      emit('class', `mark ${id$1.getMarkClass(item.mark)} path`);
       emit('data-datum', JSON.stringify({
         _TYPE: 'path',
         _MARKID: id$1.getMarkClass(item.mark),
@@ -12924,6 +12928,7 @@
     emit('d', rectangle(null, item));
     if (item.mark.role.startsWith('mark')) {
       emit('id', id$1.getMarkId());
+      emit('class', `mark ${id$1.getMarkClass(item.mark)} rectangle`);
       emit('data-datum', JSON.stringify({
         _TYPE: 'rectangle',
         _MARKID: id$1.getMarkClass(item.mark),
@@ -12966,6 +12971,7 @@
     emit('y2', item.y2 != null ? item.y2 - (item.y || 0) : 0);
     if (item.mark.role.startsWith('mark')) {
       emit('id', id$1.getMarkId());
+      emit('class', `mark ${id$1.getMarkClass(item.mark)} rule`);
       emit('data-datum', JSON.stringify({
         _TYPE: 'rule',
         _MARKID: id$1.getMarkClass(item.mark),
@@ -13193,6 +13199,7 @@
     emit('transform', t);
     if (item.mark.role.startsWith('mark')) {
       emit('id', id$1.getMarkId());
+      emit('class', `mark ${id$1.getMarkClass(item.mark)} text`);
       emit('data-datum', JSON.stringify({
         _TYPE: 'text',
         _MARKID: id$1.getMarkClass(item.mark),
@@ -27119,7 +27126,6 @@
         position: ''
       }));
       console.log(scene.source);
-      scene.group.context.dataflow.toSVG().then(x => console.log(x));
     }
     if (scene.role == 'legend') {
       parent.setAttribute('data-datum', JSON.stringify({
@@ -27349,7 +27355,7 @@
         : loc.href;
   }
 
-  function SVGStringRenderer(loader) {
+  function SVGStringRenderer (loader) {
     Renderer.call(this, loader);
 
     this._text = {
@@ -27517,7 +27523,7 @@
 
   var object$2;
 
-  function emit$1(name, value, ns, prefixed) {
+  function emit$1 (name, value, ns, prefixed) {
     object$2[prefixed || name] = value;
   }
 
@@ -27561,16 +27567,28 @@
     }
 
     // render opening group tag
+    let datum = null;
+    if (scene.role == 'axis') {
+      datum = JSON.stringify({
+        _TYPE: 'axis',
+        type: scene.items[0].datum.orient,
+        position: ''
+      });
+    }
+    if (scene.role == 'legend') {
+      datum = JSON.stringify({
+        _TYPE: 'legend',
+        color: ''
+      });
+    }
     str += openTag('g', {
       'class': cssClass(scene),
-      'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null
+      'clip-path': scene.clip ? clip(renderer, scene, scene.group) : null,
+      'data-datum': datum
     }, style);
-    if (scene.role == 'axis' || scene.role == 'legend') {
-      debugger;
-    }
 
     // render contained elements
-    function process(item) {
+    function process (item) {
       var href = renderer.href(item);
       if (href) str += openTag('a', href);
 
@@ -27613,7 +27631,7 @@
     return str;
   };
 
-  function applyStyles(o, mark, tag, defs) {
+  function applyStyles (o, mark, tag, defs) {
     if (o == null) return '';
     var i, n, prop, name, value, s = '';
 
@@ -27652,7 +27670,7 @@
     return s ? 'style="' + s.trim() + '"' : null;
   }
 
-  function escape_text(s) {
+  function escape_text (s) {
     return s.replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');

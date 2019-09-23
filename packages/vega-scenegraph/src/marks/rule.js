@@ -12,6 +12,7 @@ function attr(emit, item) {
   emit('y2', item.y2 != null ? item.y2 - (item.y || 0) : 0);
   if (item.mark.role.startsWith('mark')) {
     emit('id', id.getMarkId())
+    emit('class', `mark ${id.getMarkClass(item.mark)} rule`)
     emit('data-datum', JSON.stringify({
       _TYPE: 'rule',
       _MARKID: id.getMarkClass(item.mark),

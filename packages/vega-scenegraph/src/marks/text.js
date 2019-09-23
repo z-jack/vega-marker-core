@@ -52,6 +52,7 @@ function attr(emit, item) {
   emit('transform', t);
   if (item.mark.role.startsWith('mark')) {
     emit('id', id.getMarkId())
+    emit('class', `mark ${id.getMarkClass(item.mark)} text`)
     emit('data-datum', JSON.stringify({
       _TYPE: 'text',
       _MARKID: id.getMarkClass(item.mark),

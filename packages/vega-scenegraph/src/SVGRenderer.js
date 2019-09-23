@@ -326,7 +326,6 @@ prototype.draw = function (el, scene, prev) {
       position: ''
     }))
     console.log(scene.source)
-    scene.group.context.dataflow.toSVG().then(x => console.log(x))
   }
   if (scene.role == 'legend') {
     parent.setAttribute('data-datum', JSON.stringify({

@@ -9,6 +9,7 @@ function attr(emit, item) {
   emit('d', rectangle(null, item));
   if (item.mark.role.startsWith('mark')) {
     emit('id', id.getMarkId())
+    emit('class', `mark ${id.getMarkClass(item.mark)} rectangle`)
     emit('data-datum', JSON.stringify({
       _TYPE: 'rectangle',
       _MARKID: id.getMarkClass(item.mark),
