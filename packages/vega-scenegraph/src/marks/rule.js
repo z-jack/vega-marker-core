@@ -8,10 +8,10 @@ import id from '../util/id'
 
 function attr(emit, item) {
   emit('transform', translateItem(item));
-  emit('x2', item.x2 != null ? item.x2 - (item.x || 0) : 0);
-  emit('y2', item.y2 != null ? item.y2 - (item.y || 0) : 0);
+  emit('x2', item.x2 != null ? item.x2 + Math.random() / 1e2 - (item.x || 0) : Math.random() / 1e2);
+  emit('y2', item.y2 != null ? item.y2 + Math.random() / 1e2 - (item.y || 0) : Math.random() / 1e2);
   if (item.mark.role.startsWith('mark')) {
-    emit('id', id.getMarkId())
+    emit('id', id.getMarkId(id.getMarkClass(item.mark)))
     emit('class', `mark ${id.getMarkClass(item.mark)} rule`)
     emit('data-datum', JSON.stringify({
       _TYPE: 'rule',

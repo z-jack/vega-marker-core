@@ -1,8 +1,11 @@
 let markArray = []
-let idCount = 0
 
-function getMarkId() {
-    return 'mark' + idCount++
+let idCount = {}
+function getMarkId(namespace) {
+    if(idCount[namespace] === undefined){
+        idCount[namespace] = Object.keys(idCount).length * 1000
+    }
+    return 'mark' + idCount[namespace]++
 }
 
 function getMarkClass(mark) {
@@ -17,7 +20,7 @@ function getMarkClass(mark) {
 
 function reset() {
     markArray = []
-    idCount = 0
+    idCount = {}
 }
 
 export default {

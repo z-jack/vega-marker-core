@@ -41,7 +41,7 @@ function attr(emit, item, renderer) {
   emit('height', h);
   emit('preserveAspectRatio', a);
   if (item.mark.role.startsWith('mark')) {
-    emit('id', id.getMarkId())
+    emit('id', id.getMarkId(id.getMarkClass(item.mark)))
     emit('class', `mark ${id.getMarkClass(item.mark)} image`)
     emit('data-datum', JSON.stringify({
       _TYPE: 'image',

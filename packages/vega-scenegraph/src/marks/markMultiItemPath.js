@@ -11,7 +11,7 @@ export default function (type, shape, tip) {
     var items = item.mark.items;
     if (items.length) {
       emit('d', shape(null, items));
-      emit('id', id.getMarkId())
+      emit('id', id.getMarkId(id.getMarkClass(item.mark)))
       emit('class', `mark ${id.getMarkClass(item.mark)} path`)
       emit('data-datum', JSON.stringify(items.map(i => {
         return {

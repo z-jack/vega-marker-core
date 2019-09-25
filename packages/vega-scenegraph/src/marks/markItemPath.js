@@ -13,7 +13,7 @@ export default function (type, shape, isect) {
     emit('transform', transformItem(item));
     emit('d', shape(null, item));
     if (item.mark.role.startsWith('mark')) {
-      emit('id', id.getMarkId())
+      emit('id', id.getMarkId(id.getMarkClass(item.mark)))
       emit('class', `mark ${id.getMarkClass(item.mark)} path`)
       emit('data-datum', JSON.stringify({
         _TYPE: 'path',

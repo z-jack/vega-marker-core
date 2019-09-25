@@ -42,5 +42,6 @@ export function cssClass(mark) {
   return 'mark-' + mark.marktype
     + (mark.role ? ' role-' + mark.role : '')
     + (mark.name ? ' ' + mark.name : '')
-    + (mark.role != 'mark'? ' ' + mark.role : '');
+    + (mark.role != 'mark'? ' ' + mark.role : '')
+    + (mark.role.startsWith('axis-') || mark.role.startsWith('legend-') ? ' mark': '');
 }

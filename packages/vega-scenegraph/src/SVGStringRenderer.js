@@ -11,7 +11,7 @@ import { styles, styleProperties } from './util/svg/styles';
 import { inherits } from 'vega-util';
 import id from './util/id'
 
-export default function SVGStringRenderer (loader) {
+export default function SVGStringRenderer(loader) {
   Renderer.call(this, loader);
 
   this._text = {
@@ -179,7 +179,7 @@ prototype.buildDefs = function () {
 
 var object;
 
-function emit (name, value, ns, prefixed) {
+function emit(name, value, ns, prefixed) {
   object[prefixed || name] = value;
 }
 
@@ -219,7 +219,8 @@ prototype.mark = function (scene) {
     style;
 
   if (tag !== 'g' && scene.interactive === false) {
-    style = 'style="pointer-events: none;"';
+    // style = 'style="pointer-events: none;"';
+    style = '';
   }
 
   // render opening group tag
@@ -243,13 +244,18 @@ prototype.mark = function (scene) {
     'data-datum': datum
   }, style);
 
+  var forceId = false
+  if (scene.role.startsWith('axis-') || scene.role.startsWith('legend-')) {
+    forceId = scene.role
+  }
+
   // render contained elements
-  function process (item) {
+  function process(item) {
     var href = renderer.href(item);
     if (href) str += openTag('a', href);
 
     style = (tag !== 'g') ? applyStyles(item, scene, tag, defs) : null;
-    str += openTag(tag, renderer.attributes(mdef.attr, item), style);
+    str += openTag(tag, { id: forceId ? id.getMarkId(forceId) : '', ...renderer.attributes(mdef.attr, item) }, style);
 
     if (tag === 'text') {
       str += escape_text(textValue(item));
@@ -272,6 +278,8 @@ prototype.mark = function (scene) {
     visit(scene, process);
   }
 
+  forceId = false;
+
   // render closing group tag
   return str + closeTag('g');
 };
@@ -287,12 +295,12 @@ prototype.markGroup = function (scene) {
   return str;
 };
 
-function applyStyles (o, mark, tag, defs) {
+function applyStyles(o, mark, tag, defs) {
   if (o == null) return '';
   var i, n, prop, name, value, s = '';
 
   if (tag === 'bgrect' && mark.interactive === false) {
-    s += 'pointer-events: none; ';
+    // s += 'pointer-events: none; ';
   }
 
   if (tag === 'text') {
@@ -326,7 +334,7 @@ function applyStyles (o, mark, tag, defs) {
   return s ? 'style="' + s.trim() + '"' : null;
 }
 
-function escape_text (s) {
+function escape_text(s) {
   return s.replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
